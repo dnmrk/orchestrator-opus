@@ -1,0 +1,26 @@
+{
+  "name": "symphony",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code + Jira implementation of the openai/symphony SPEC.md",
+  "type": "module",
+  "bin": {
+    "symphony": "src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "SYMPHONY_LOG_LEVEL=error node --test test/*.test.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "liquidjs": "^10.30.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}

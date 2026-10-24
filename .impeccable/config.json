@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-10-24T03:49:01.326Z",
+        "reason": "user brief: asked for the board to look exactly like their Linear screenshot; Linear's UI uses Inter"
+      }
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Agent-facing tracker tool ($SYMPHONY_TRACKER). SYMPHONY_NODE is the orchestrator's node binary.
+exec "${SYMPHONY_NODE:-node}" "$(dirname "$0")/../src/cli.ts" tracker "$@"

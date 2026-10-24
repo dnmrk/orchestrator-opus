@@ -9,6 +9,45 @@ instead of Codex app-server, so the front-matter key is `claude` instead of `cod
 one `claude -p` invocation; continuation turns use `--resume <session>` on the same session. SSH
 workers (Appendix A) are not implemented.
 
+![Board with a running agent, a retry, and tickets waiting for review](docs/screenshots/board.jpg)
+
+## Features
+
+**Orchestration (SPEC core)**
+- Polls the tracker, dispatches eligible tickets by priority and age, and respects `blocked_by`,
+  `required_labels`, and global and per-state concurrency limits.
+- Runs multi-turn Claude Code sessions. Turn 1 renders the Liquid prompt, and later turns `--resume`
+  the same session with a continuation prompt.
+- Reconciles every tick. A ticket that leaves an active state stops its agent, and a silent agent
+  is killed after `stall_timeout_ms`.
+- Retries failures with exponential backoff, and continues 1 s after a clean exit if the ticket is
+  still active.
+- A ticket that uses up `max_turns` gets a comment and moves to `Blocked`, so it can't loop forever.
+- Hot-reloads `WORKFLOW.md`. An invalid edit pauses new dispatch and keeps the last good config.
+
+**Trackers**
+- **Local**: one markdown file per ticket, with a YAML header and the body as description.
+  There are no services to run.
+- **Jira Cloud**: REST v3 with token paging, blockers from issue links, and ADF flattened to text.
+- Agents update their own ticket through `$SYMPHONY_TRACKER comment|transition`, which is scoped to
+  the dispatched key.
+
+**Workspaces**
+- Each ticket gets its own directory under `workspace.root`, with `after_create`, `before_run`,
+  `after_run`, and `before_remove` hooks.
+- `workspace.shared` mode runs every ticket in one existing checkout, such as a Docker-mounted
+  Shopware project, one agent at a time.
+
+**Dashboard** (local-only, no build)
+- A Linear-style board with drag-and-drop moves, configurable and hidden columns, a filter,
+  `c` for a new issue, and system, light, and dark themes.
+- An issue view showing the description, live agent activity, comments, and properties.
+- An Activity tab with running agents, the retry queue, recent runs, tokens, cost, and agent time.
+- A JSON API (SPEC 13.7). Writes are protected against cross-site requests and DNS rebinding.
+
+**Footprint**: Node 24 runs the TypeScript directly with no build step. The only runtime
+dependencies are `yaml` and `liquidjs`, and the test suite fakes `claude` (`test/fixtures/fake-claude.mjs`).
+
 ## Run
 
 Local board, no external services:
@@ -40,12 +79,28 @@ Needs Node ≥ 24 (TypeScript runs via native type stripping, no build), plus `c
 Set `server.port` in WORKFLOW.md (the local example uses `4555`) or pass `--port 4555`, then open
 <http://127.0.0.1:4555/>.
 
-- **Board**: one column per state (`board.columns`, default active states, `Human Review`, the
-  blocked state, then terminal states). Drag cards to change state, **New ticket** to create one
-  (local tracker; "Let an agent pick this up" adds `required_labels`), click a card for its
-  description, comments, live agent activity, and a comment box. Running cards show their turn
-  budget as a strip along the top edge.
-- **Activity**: running agents, retry queue, recent runs, token/cost totals.
+- **Board**: one column per state in `board.columns`. The default is the active states,
+  `Human Review`, the blocked state, then the terminal states.
+  - `board.hidden_columns` collapse into a side list that shows counts and accepts drops. Click one
+    to show it, and use a column's ⋯ menu to hide it again. These choices are saved per browser.
+  - Drag a card to change its state.
+  - Use **New issue**, a column's **+**, or `c` to create a ticket (local tracker only).
+    "Let an agent pick this up" adds `required_labels`.
+  - Cards show priority, labels, and an agent chip: the turn while it runs, or the retry countdown.
+
+  ![Board in dark theme](docs/screenshots/board-dark.jpg)
+
+- **Issue view**: click a card to see the description, live agent activity, the comment thread,
+  and a comment box. The sidebar has status, priority, labels, the agent state, the workspace,
+  and the ticket file. Esc, ×, or a backdrop click closes it.
+
+  ![Issue view with an agent working](docs/screenshots/issue.jpg)
+
+- **Activity**: running agents, the retry queue, recent runs, and token, cost, and agent-time totals.
+
+  ![Activity tab](docs/screenshots/activity.jpg)
+
+Screenshots use demo data.
 
 Board writes (`POST /api/v1/tickets`, `/api/v1/tickets/<id>/state`, `/api/v1/tickets/<id>/comments`)
 require `Content-Type: application/json` and a same-origin `Origin`, so another website you visit

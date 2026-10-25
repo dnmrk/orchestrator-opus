@@ -31,6 +31,8 @@ agent:
   max_turns: 10
   blocked_state: Blocked              # where a ticket goes if it uses all turns without a handoff
 # checks:                            # Symphony runs these when the agent moves a ticket to the handoff state
+#   # docker exec checks only see the agent's code with workspace.shared (your mounted checkout);
+#   # per-ticket clones under workspace.root are not mounted in your containers.
 #   commands:
 #     - docker compose exec -T web vendor/bin/phpunit
 #   handoff_state: Human Review

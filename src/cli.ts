@@ -65,7 +65,13 @@ async function main() {
   await orch.start();
   // Listener settings are read once; changing server.port needs a restart (allowed by SPEC 13.7).
   const port = cliPort ?? orch.cfg.serverPort;
-  if (port !== null) server = await startServer(orch, port);
+  if (port !== null) {
+    // orch.start() may already have dispatched; don't exit past it and orphan its agents.
+    server = await startServer(orch, port).catch(async (e) => {
+      await orch.stop();
+      throw e;
+    });
+  }
 }
 
 main().catch((e) => {

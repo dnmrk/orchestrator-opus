@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { errMsg, killTree, log } from './core.ts';
+import { errMsg, killTree, log, orphanGuard } from './core.ts';
 import type { Config } from './workflow.ts';
 
 /** SPEC 4.2: sanitize to [A-Za-z0-9._-]; if that changed anything, add a 64-bit hash of the original. */
@@ -37,7 +37,7 @@ export function runHook(
 ): Promise<void> {
   log('info', 'hook start', { hook: name, cwd });
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('bash', ['-lc', script], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const child = spawn('bash', ['-lc', orphanGuard() + script], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     let tail = '';
     const keep = (d: Buffer) => (tail = (tail + d).slice(-4000));
     child.stdout.on('data', keep);

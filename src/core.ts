@@ -1,4 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
+import { open, readFile, rm } from 'node:fs/promises';
 
 export type BlockerRef = { id: string | null; identifier: string | null; state: string | null };
 
@@ -61,6 +62,48 @@ export function killTree(child: ChildProcess) {
   try {
     if (child.pid) process.kill(-child.pid, 'SIGKILL');
   } catch {}
+}
+
+/**
+ * Shell prefix for detached commands: SIGKILLs the command's process group (bash is its leader) once this
+ * process is gone, so a crashed service can't leave agents or hooks running. Exits quietly when the command ends.
+ */
+export const orphanGuard = () =>
+  `(while kill -0 ${process.pid} && kill -0 $$; do sleep 1; done; kill -0 ${process.pid} || kill -KILL -- -$$) </dev/null >/dev/null 2>&1 &\n`;
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: any) {
+    return e?.code === 'EPERM';
+  }
+};
+
+/**
+ * Exclusive lock file holding our pid; resolves to its release function. A holder pid that is gone (or garbage)
+ * is stale and taken over; a live holder is waited on for up to `waitMs`, then the call throws.
+ */
+export async function lockFile(path: string, waitMs = 0): Promise<() => Promise<void>> {
+  const end = Date.now() + waitMs;
+  for (;;) {
+    try {
+      const fh = await open(path, 'wx');
+      await fh.writeFile(String(process.pid));
+      await fh.close();
+      return () => rm(path, { force: true });
+    } catch (e: any) {
+      if (e?.code !== 'EEXIST') throw e;
+    }
+    const holder = await readFile(path, 'utf8').catch(() => ''); // '' = just created or just released: wait
+    if (holder && !alive(Number(holder))) {
+      // shortcut: two processes reclaiming one stale lock at once can both win; only reachable after a holder crashed.
+      await rm(path, { force: true });
+      continue;
+    }
+    if (Date.now() >= end) throw new Error(`${path} is held by pid ${holder || '?'}`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;

@@ -73,3 +73,18 @@ Not verified: phone-width layout (window resize didn't apply), light theme scree
 - [x] Inline `code` and **bold** rendering in description, comments, agent activity; Linear-style dates
 - [x] Bug: LocalTracker atomic rename reset birth time → created_at drifted to last write. Now `created:` is written on create and stamped on first rewrite (test added, 36/36)
 - Verified live in Chrome (dark + light) on DEV-1/DEV-2; restarted Symphony with 0 running agents
+
+## Round 9 — concurrency hardening (Codex review findings 1–3)
+Branch `fix/concurrency-hardening`. Baseline in container: 36/36.
+- [x] core.ts `lockFile(path, waitMs)`: `open wx` + our pid; a lock whose pid is dead (or garbage) is stale and taken over
+- [x] local.ts: `comment`/`transition` go through `update()` — per-ticket `<ID>.md.lock`, re-read inside the lock (fixes lost updates + same-pid tmp-name clash)
+- [x] orchestrator.ts: `start()` takes a no-wait service lock (tmpdir, keyed on shared checkout ?? workspace root) before first dispatch; `stop()` releases. cli.ts: stop the orchestrator if the dashboard port fails
+- [x] core.ts `orphanGuard()`: shell prefix on agent turns + hooks; SIGKILLs the process group ~1s after the service dies
+- [x] Tests first (red), then green: concurrent comments+transition, stale/live lock, second service refused, killed service takes its agent down
+- [x] Verify: `docker compose exec app npm test` + `npm run typecheck`
+Review — files: src/{core,local,orchestrator,cli,agent,workspace}.ts; test/{local,orchestrator,agent}.test.ts, test/fixtures/orphan-parent.mjs.
+Commands (container `app`): `npm test` 40/40, `npm run typecheck` clean; agent.test.ts 3× stable; no leftover watcher processes.
+Red first: old local.ts fails the concurrency test with `ENOENT rename ABC-1.md.<pid>.tmp` (same-pid tmp clash); without the
+service lock the second orchestrator starts (test hangs on its timer); without the guard the `bash -lc` agent outlived a SIGKILLed parent.
+Not covered: two services on one local board with *different* workspace roots (lock is keyed on the workspace); a human editing the .md
+in an editor mid-write; pid reuse within the guard's 1s poll.

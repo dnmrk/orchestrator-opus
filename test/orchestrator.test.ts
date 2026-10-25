@@ -204,3 +204,16 @@ test('if the Blocked transition fails, the issue is parked until its state chang
     await orch.stop();
   }
 });
+
+test('a second service on the same workspace refuses to start until the first stops', async () => {
+  const { orch, tracker, workflowPath } = setup();
+  const second = new Orchestrator({ workflowPath, makeTracker: () => tracker, toolCommand: 'tool-cmd' });
+  await orch.start();
+  try {
+    await assert.rejects(second.start(), /already using/);
+  } finally {
+    await orch.stop();
+  }
+  await second.start();
+  await second.stop();
+});

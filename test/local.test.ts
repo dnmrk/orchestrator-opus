@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { lockFile } from '../src/core.ts';
 import { LocalTracker } from '../src/local.ts';
 import { tmp } from './helpers.ts';
 
@@ -108,4 +110,24 @@ test('created survives rewrites: recorded from birth time on first write, then k
   assert.equal(after.created_at, before.created_at);
   assert.equal(readFileSync(join(dir, 'X-1.md'), 'utf8').match(/^created:/gm)!.length, 1);
   assert.match(after.description!, /^Body\n\n## Comments\n\n### .+\n\nfirst$/);
+});
+
+test('concurrent comments and a transition on one ticket all land', async () => {
+  const { dir, tracker } = board({ 'ABC-1.md': '---\nstate: To Do\ntitle: T\n---\nBody\n' });
+  const notes = Array.from({ length: 20 }, (_, i) => tracker.comment('ABC-1', `note ${i}`));
+  await Promise.all([...notes, tracker.transition('ABC-1', 'Human Review')]);
+  const text = readFileSync(join(dir, 'ABC-1.md'), 'utf8');
+  for (let i = 0; i < 20; i++) assert.match(text, new RegExp(`note ${i}\\n`));
+  assert.match(text, /^state: Human Review$/m);
+  assert.ok(!existsSync(join(dir, 'ABC-1.md.lock')));
+});
+
+test('lockFile: a dead holder is taken over, a live one is refused', async () => {
+  const path = join(tmp(), 'x.lock');
+  writeFileSync(path, String(spawnSync(process.execPath, ['-e', '']).pid));
+  const release = await lockFile(path);
+  assert.equal(readFileSync(path, 'utf8'), String(process.pid));
+  await assert.rejects(lockFile(path), /held by pid/);
+  await release();
+  assert.ok(!existsSync(path));
 });

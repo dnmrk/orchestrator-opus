@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { killTree, shq } from './core.ts';
+import { killTree, orphanGuard, shq } from './core.ts';
 import type { Config } from './workflow.ts';
 
 export type AgentEvent = {
@@ -60,7 +60,7 @@ export function summarize(ev: any, at = Date.now()): AgentEvent {
 export function runTurn(o: TurnOptions): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     if (o.signal.aborted) return reject(new Error(String(o.signal.reason ?? 'aborted')));
-    const child = spawn('bash', ['-lc', claudeCommand(o.cfg, o.sessionId, o.resume)], {
+    const child = spawn('bash', ['-lc', orphanGuard() + claudeCommand(o.cfg, o.sessionId, o.resume)], {
       cwd: o.cwd,
       env: o.env,
       stdio: ['pipe', 'pipe', 'pipe'],

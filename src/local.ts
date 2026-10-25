@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promi
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Document, parseDocument } from 'yaml';
-import { errMsg, log, norm, TrackerError, type BlockerRef, type Issue, type NewTicket, type Tracker, type TrackerTools } from './core.ts';
+import { errMsg, lockFile, log, norm, TrackerError, type BlockerRef, type Issue, type NewTicket, type Tracker, type TrackerTools } from './core.ts';
 import { expandPath } from './workflow.ts';
 
 // Optional `---` YAML header, then the markdown body.
@@ -157,18 +157,32 @@ export class LocalTracker implements Tracker, TrackerTools {
     return `---\n${String(t.doc)}---\n${body}`;
   }
 
+  /** Read-modify-write under a per-ticket lock, so the board and the agent's tracker tool can't drop each other's edits. */
+  async update(identifier: string, change: (t: Ticket) => string): Promise<void> {
+    if (!SAFE_ID.test(identifier)) throw new Error(`no ticket ${identifier} in ${this.dir}`);
+    const release = await lockFile(join(this.dir, `${identifier}.md.lock`), 5000);
+    try {
+      const t = await this.mustRead(identifier);
+      await this.save(t.path, change(t));
+    } finally {
+      await release();
+    }
+  }
+
   async comment(identifier: string, text: string): Promise<void> {
     if (!text.trim()) throw new Error('comment text is empty');
-    const t = await this.mustRead(identifier);
-    const body = t.body.trimEnd();
-    const heading = /^## Comments$/m.test(body) ? '' : '\n\n## Comments';
-    await this.save(t.path, this.serialize(t, `${body}${heading}\n\n### ${new Date().toISOString()}\n\n${text.trim()}\n`));
+    await this.update(identifier, (t) => {
+      const body = t.body.trimEnd();
+      const heading = /^## Comments$/m.test(body) ? '' : '\n\n## Comments';
+      return this.serialize(t, `${body}${heading}\n\n### ${new Date().toISOString()}\n\n${text.trim()}\n`);
+    });
   }
 
   async transition(identifier: string, state: string): Promise<string> {
-    const t = await this.mustRead(identifier);
-    t.doc.set('state', state); // Document API keeps the user's comments and key order
-    await this.save(t.path, this.serialize(t));
+    await this.update(identifier, (t) => {
+      t.doc.set('state', state); // Document API keeps the user's comments and key order
+      return this.serialize(t);
+    });
     return state;
   }
 }

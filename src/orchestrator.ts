@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, unwatchFile, watchFile } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runTurn, type AgentEvent } from './agent.ts';
-import { errMsg, log, norm, type Issue, type Tracker, type TrackerTools } from './core.ts';
+import { errMsg, lockFile, log, norm, type Issue, type Tracker, type TrackerTools } from './core.ts';
 import { buildConfig, loadWorkflow, renderPrompt, workflowMtime, type Config, type Workflow } from './workflow.ts';
 import { ensureWorkspace, hookEnv, removeWorkspace, runHook } from './workspace.ts';
 
@@ -74,6 +76,7 @@ export class Orchestrator {
   /** issue id → normalized state when it was blocked but couldn't be moved; skipped until the state changes. */
   parked = new Map<string, string>();
 
+  unlock: (() => Promise<void>) | null = null;
   tickTimer: NodeJS.Timeout | null = null;
   ticking = false;
   stopped = false;
@@ -109,6 +112,12 @@ export class Orchestrator {
   async start() {
     this.reload();
     if (this.configError || !this.cfg) throw new Error(`startup validation failed: ${this.configError}`);
+    // Running/claimed state is in memory, so a second service on the same workspace would dispatch the same tickets.
+    const target = this.cfg.workspaceShared ?? this.cfg.workspaceRoot;
+    const lock = join(tmpdir(), `symphony-${createHash('sha256').update(target).digest('hex').slice(0, 16)}.lock`);
+    this.unlock = await lockFile(lock).catch((e) => {
+      throw new Error(`another symphony service is already using ${target} (${errMsg(e)})`);
+    });
     watchFile(this.o.workflowPath, { interval: 2000 }, () => this.reload());
     await this.startupCleanup();
     this.scheduleTick(0);
@@ -122,6 +131,8 @@ export class Orchestrator {
     this.retries.clear();
     for (const e of this.running.values()) this.stopRun(e, 'shutdown', true, false);
     await Promise.allSettled([...this.running.values()].map((e) => e.done));
+    await this.unlock?.();
+    this.unlock = null;
   }
 
   async startupCleanup() {

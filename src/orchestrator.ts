@@ -308,6 +308,7 @@ export class Orchestrator {
         try {
           await runHook('check', cmd, cwd, timeoutMs, env, e.abort.signal);
         } catch (x) {
+          if (e.abort.signal.aborted) throw x; // stopped (shutdown/stall/terminal), not a check failure
           failure = `Check failed: ${cmd}\n${errMsg(x)}`;
           break;
         }
@@ -323,7 +324,7 @@ export class Orchestrator {
     await this.tracker.comment?.(e.identifier, `Symphony: ${failure}`);
     if (!this.tracker.transition) throw new Error('tracker has no transition tool');
     await this.tracker.transition(e.identifier, prev);
-    [e.issue] = await this.tracker.fetchIssuesByIds([e.issue.id]);
+    e.issue = (await this.tracker.fetchIssuesByIds([e.issue.id]))[0] ?? e.issue;
     return failure;
   }
 
@@ -464,7 +465,7 @@ export class Orchestrator {
       const issue = byId.get(id);
       if (!issue) this.stopRun(e, 'issue no longer visible', true, false);
       else if (this.isTerminal(issue.state)) this.stopRun(e, `issue is terminal (${issue.state})`, true, true);
-      else if (this.cfg.checks.commands.length && norm(issue.state) === norm(this.cfg.checks.handoffState)) e.issue = issue; // the worker owns the gate
+      else if (this.cfg.checks.commands.length && norm(issue.state) === norm(this.cfg.checks.handoffState)) continue; // the worker owns the gate (and e.issue, which holds the last active state)
       else if (!this.isActive(issue.state)) this.stopRun(e, `issue left active states (${issue.state})`, true, false);
       else if (!this.routable(issue)) this.stopRun(e, 'issue no longer routable', true, false);
       else e.issue = issue;

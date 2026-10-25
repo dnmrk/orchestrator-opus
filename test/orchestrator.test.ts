@@ -304,3 +304,28 @@ test('a run is not stalled or stopped while its checks run in the handoff state'
     await orch.stop();
   }
 });
+
+test('a reconcile tick mid-turn does not change which state a failed gate returns the ticket to', async () => {
+  const { orch, tracker, writes } = gated('', ['exit 1']);
+  tracker.issues.set('1', issue({ state: 'In Progress' }));
+  process.env.FAKE_CLAUDE_SLEEP_MS = '500';
+  await orch.start();
+  try {
+    await waitFor(() => orch.running.get('1')?.lastEvent === 'system/init');
+    await orch.reconcile(); // the fake agent has "moved" the ticket to Human Review by now
+    assert.equal(tracker.issues.get('1')!.state, 'Human Review');
+    await waitFor(() => writes.length >= 2);
+    assert.equal(writes[1], 'transition ABC-1 In Progress');
+  } finally {
+    delete process.env.FAKE_CLAUDE_SLEEP_MS;
+    await orch.stop();
+  }
+});
+
+test('aborting a run during checks posts no failure comment and does not transition', async () => {
+  const { orch, writes } = gated('', ['sleep 20']);
+  await orch.start();
+  await waitFor(() => orch.running.get('1')?.checking === true);
+  await orch.stop();
+  assert.deepEqual(writes, []);
+});

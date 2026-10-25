@@ -135,3 +135,10 @@ Files: src/workflow.ts, src/workspace.ts, src/orchestrator.ts, test/orchestrator
 Ran in the symphony-handoff container: `npm test` 45/45 pass (baseline 40), `npm run typecheck` clean.
 Red first: the 4 new orchestrator tests timed out in waitFor and the workflow test threw on `cfg.checks` being undefined, before any src change.
 Not covered: the sha path (tests run in a non-git workspace), a check being aborted mid-run by shutdown, tracker without a transition tool (throws, worker retry path).
+
+### Review: fix round
+Three review bugs fixed, each with a red test first (45 -> 48 tests, all pass; typecheck clean):
+- reconcile's handoff exemption set `e.issue`, so a mid-turn tick made a failed gate transition back to Human Review (red: `transition ABC-1 Human Review`). It now leaves `e.issue` alone.
+- an abort during checks was reported as a check failure (red: bogus "Check failed" comment + transition on `orch.stop()`). Aborted runs now rethrow.
+- handoff_state validation ran with no `checks.commands` (red: `Human Review` in terminal_states failed to load). Now only validated when commands are set.
+Also: the failure-path refetch keeps `e.issue` if the issue vanished.

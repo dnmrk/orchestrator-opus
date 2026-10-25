@@ -61,3 +61,8 @@ test('checks: off by default, defaults when set, handoff_state must not be activ
   assert.throws(() => build('checks: { commands: [x], handoff_state: Done }'), /checks.handoff_state/);
   assert.throws(() => build('checks: { commands: [x], timeout_ms: 0 }'), /checks.timeout_ms/);
 });
+
+test('checks: handoff_state is only validated when commands are set', () => {
+  const cfg = buildConfig(loadWorkflow(writeWorkflow(tmp(), 'tracker: { kind: jira, terminal_states: [Done, Human Review] }')));
+  assert.deepEqual(cfg.checks.commands, []);
+});

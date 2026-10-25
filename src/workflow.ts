@@ -141,7 +141,8 @@ export function buildConfig(wf: Workflow): Config {
   }
 
   const handoffState = str(c.checks?.handoff_state)?.trim() ?? 'Human Review';
-  if ([...activeStates, ...terminalStates].some((s) => norm(s) === norm(handoffState))) {
+  const checkCommands = strList(c.checks?.commands, 'checks.commands') ?? [];
+  if (checkCommands.length && [...activeStates, ...terminalStates].some((s) => norm(s) === norm(handoffState))) {
     throw new WorkflowError('invalid_config', 'checks.handoff_state must not be an active or terminal state');
   }
 
@@ -195,7 +196,7 @@ export function buildConfig(wf: Workflow): Config {
       stallTimeoutMs: int(claude.stall_timeout_ms, 300_000, 'claude.stall_timeout_ms', -Infinity),
     },
     checks: {
-      commands: strList(c.checks?.commands, 'checks.commands') ?? [],
+      commands: checkCommands,
       handoffState,
       timeoutMs: int(c.checks?.timeout_ms, 600_000, 'checks.timeout_ms', 1),
     },

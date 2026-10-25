@@ -217,3 +217,90 @@ test('a second service on the same workspace refuses to start until the first st
   await second.start();
   await second.stop();
 });
+
+function gated(extra: string, commands: string[]) {
+  const t = setup(['checks:', '  commands:', ...commands.map((c) => `    - '${c}'`), extra].join('\n'));
+  const writes: string[] = [];
+  let moved = 0;
+  Object.assign(t.tracker, {
+    comment: async (key: string, text: string) => void writes.push(`comment ${key}: ${text}`),
+    transition: async (key: string, state: string) => {
+      writes.push(`transition ${key} ${state}`);
+      t.tracker.issues.get('1')!.state = state;
+      return state;
+    },
+  });
+  // The "agent" moves the ticket to Human Review at the end of every turn.
+  t.tracker.onRefresh = () => {
+    const n = t.calls().length;
+    if (n > moved) {
+      moved = n;
+      t.tracker.issues.get('1')!.state = 'Human Review';
+    }
+  };
+  t.tracker.issues.set('1', issue());
+  return { ...t, writes };
+}
+
+test('checks pass → evidence comment, claim released, no extra turn', async () => {
+  const { orch, calls, writes } = gated('', ['echo ok']);
+  await orch.start();
+  try {
+    await waitFor(() => writes.length === 1 && !orch.running.size);
+    assert.match(writes[0], /^comment ABC-1: Symphony checks passed/);
+    assert.match(writes[0], /echo ok/);
+    await waitFor(() => !orch.claimed.size, 3000);
+    assert.equal(calls().length, 1);
+  } finally {
+    await orch.stop();
+  }
+});
+
+test('failing check comments, moves back, and resumes the same session with the failure; then passes', async () => {
+  const { orch, calls, writes } = gated('', ['test -f "$SYMPHONY_WORKSPACE/ok" || { touch "$SYMPHONY_WORKSPACE/ok"; echo boom; exit 1; }']);
+  await orch.start();
+  try {
+    await waitFor(() => writes.length === 3 && !orch.running.size);
+    assert.match(writes[0], /^comment ABC-1: .*boom/s);
+    assert.equal(writes[1], 'transition ABC-1 To Do');
+    assert.match(writes[2], /checks passed/);
+    const [first, second] = calls();
+    assert.equal(calls().length, 2);
+    assert.equal(first.args[first.args.indexOf('--session-id') + 1], second.args[second.args.indexOf('--resume') + 1]);
+    assert.match(second.prompt, /boom/);
+    assert.doesNotMatch(second.prompt, /Continue working on/);
+  } finally {
+    await orch.stop();
+  }
+});
+
+test('checks failing on every turn exhaust max_turns and block the issue', async () => {
+  const { orch, tracker, calls, writes } = gated('', ['echo nope; exit 1']);
+  await orch.start();
+  try {
+    await waitFor(() => tracker.issues.get('1')!.state === 'Blocked');
+    assert.equal(calls().length, 3);
+    assert.equal(writes.filter((w) => w.startsWith('transition ABC-1 To Do')).length, 3);
+    assert.equal(orch.recent[0].outcome, 'blocked');
+  } finally {
+    await orch.stop();
+  }
+});
+
+test('a run is not stalled or stopped while its checks run in the handoff state', async () => {
+  const { orch, calls, writes } = gated('', ['sleep 1']);
+  await orch.start();
+  try {
+    await waitFor(() => orch.running.get('1')?.checking === true);
+    assert.equal(orch.running.get('1')!.lastMessage, 'Running checks');
+    orch.cfg.claude.stallTimeoutMs = 50;
+    await new Promise((r) => setTimeout(r, 100));
+    await orch.reconcile();
+    assert.equal(orch.running.get('1')!.stop, undefined);
+    await waitFor(() => writes.length === 1 && !orch.running.size);
+    assert.match(writes[0], /checks passed/);
+    assert.equal(calls().length, 1);
+  } finally {
+    await orch.stop();
+  }
+});

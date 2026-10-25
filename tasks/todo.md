@@ -88,3 +88,50 @@ Red first: old local.ts fails the concurrency test with `ENOENT rename ABC-1.md.
 service lock the second orchestrator starts (test hangs on its timer); without the guard the `bash -lc` agent outlived a SIGKILLed parent.
 Not covered: two services on one local board with *different* workspace roots (lock is keyed on the workspace); a human editing the .md
 in an editor mid-write; pid reuse within the guard's 1s poll.
+
+## Round 10 — handoff checks gate (ported from orchestrator-astra)
+Goal: "Human Review" means the orchestrator ran the project's checks and they passed. The agent saying so isn't enough.
+Branch `feat/handoff-checks`, in worktree `../symphony-handoff-checks` off `main` (9c7622f), so it stays clear of the Codex session in the main checkout.
+
+Config (front matter, all optional; no `commands` = current behaviour, unchanged):
+```yaml
+checks:
+  commands:                      # each runs via runHook (bash -lc, orphan guard, process-group kill) in the workspace
+    - docker compose exec -T web vendor/bin/phpunit
+  handoff_state: Human Review    # default "Human Review"; validated as not active and not terminal
+  timeout_ms: 600000             # per command, default 600000
+```
+
+Flow (orchestrator side, outside the agent's control):
+1. After each turn in `runWorker`, refetch the issue. If it's in `handoff_state` and checks are set, run them in order and stop at the first failure.
+2. **Pass**: comment `Symphony checks passed at <git HEAD sha>` with the command list, then return. The release path is the same as today.
+3. **Fail**: comment with the failing command and the tail of its output, transition back to the ticket's last active state
+   (`e.issue.state`), then run the next turn **on the same session** with a prompt containing the failure output. Counts toward `max_turns`.
+   Running out of turns goes through the existing `block()` path, to `Blocked`.
+4. `reconcile()` no longer stops a run whose issue is in `handoff_state` while checks are set, so the worker owns the gate.
+5. Stall detection skips a run while its checks are running (`checking` flag). Checks have their own timeout, and `lastMessage` reads "Running checks" on the board.
+
+Files: src/workflow.ts (Config.checks + validation), src/workspace.ts (`runHook` resolves with its output tail, so callers can read the sha;
+existing callers ignore the value), src/orchestrator.ts (gate, reconcile, stall skip, failure prompt), test/orchestrator.test.ts,
+test/workflow.test.ts, README.md (front matter table + Features), WORKFLOW.example.md / WORKFLOW.jira.example.md (commented `checks:` block, prompt mentions the gate).
+
+- [x] workflow.ts: parse + validate `checks`; tests for defaults, and for a handoff_state that's active or terminal being rejected
+- [x] workspace.ts: `runHook` returns `Promise<string>` (the output tail)
+- [x] orchestrator.ts: gate in runWorker, `checksFailedPrompt`, reconcile exemption, `checking` stall skip
+- [x] Tests (red first): pass → evidence comment with sha and claim released; fail → comment + transition back + next turn uses `--resume`
+      and its prompt contains the failure; fail every turn → Blocked; a check longer than stall_timeout isn't killed; no `checks` → unchanged (existing tests stay green)
+- [x] Docs: README + both example workflows
+- [x] Verify: `docker compose exec app npm test` + `npm run typecheck`
+
+Not ported from astra (deliberately):
+- Revision numbers: Jira already serializes edits, and a local ticket is guarded by its file lock.
+- SQLite store / crash recovery: the tracker is the source of truth (SPEC).
+- Saved patch and digest: the pushed branch plus the checked sha cover it.
+- Checks that must not modify the tree.
+- Checks when a human drags a ticket to Human Review: only agent runs are gated.
+
+### Review
+Files: src/workflow.ts, src/workspace.ts, src/orchestrator.ts, test/orchestrator.test.ts, test/workflow.test.ts, README.md, WORKFLOW.example.md, WORKFLOW.jira.example.md.
+Ran in the symphony-handoff container: `npm test` 45/45 pass (baseline 40), `npm run typecheck` clean.
+Red first: the 4 new orchestrator tests timed out in waitFor and the workflow test threw on `cfg.checks` being undefined, before any src change.
+Not covered: the sha path (tests run in a non-git workspace), a check being aborted mid-run by shutdown, tracker without a transition tool (throws, worker retry path).

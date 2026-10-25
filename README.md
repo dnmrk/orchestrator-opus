@@ -22,6 +22,8 @@ workers (Appendix A) are not implemented.
   is killed after `stall_timeout_ms`.
 - Retries failures with exponential backoff, and continues 1 s after a clean exit if the ticket is
   still active.
+- Optional handoff gate: with `checks.commands`, an agent's move to `Human Review` only sticks if Symphony's own
+  checks pass (comment with the checked git sha). Otherwise the ticket goes back and the agent resumes with the failure.
 - A ticket that uses up `max_turns` gets a comment and moves to `Blocked`, so it can't loop forever.
 - Hot-reloads `WORKFLOW.md`. An invalid edit pauses new dispatch and keeps the last good config.
 
@@ -117,6 +119,9 @@ Development (inside the container): `docker compose up -d && docker compose exec
 | `board.columns` / `board.hidden_columns` / `board.title` | active states, `Human Review`, blocked, terminal / `[]` / board dir name | Linear-style board: visible columns, the collapsible "Hidden columns" list (counts, drop targets, click to show), and the header title |
 | `workspace.shared` | — | run every ticket in this existing directory (e.g. a Docker-mounted project checkout) instead of per-ticket workspaces; never created or deleted, forces `max_concurrent_agents` to 1 (deviation from SPEC 9) |
 | `agent.blocked_state` | `Blocked` | ticket that used all `max_turns` while still active gets a comment and moves here instead of being re-dispatched (deviation from SPEC 7.1); if that move fails it is skipped until its state changes |
+| `checks.commands` | `[]` | run in order in the workspace (via `bash -lc`) when an agent moves a ticket to `checks.handoff_state`; none = no gate. The first failure moves the ticket back with the output and resumes the agent (counts toward `max_turns`) |
+| `checks.handoff_state` | `Human Review` | the gated state; must not be an active or terminal state. Only agent moves are gated, not a human dragging a card |
+| `checks.timeout_ms` | `600000` | per command; stall detection is paused while checks run |
 | `claude.command` | `claude` | launched via `bash -lc` in the workspace |
 | `claude.model` | — | passed as `--model` |
 | `claude.permission_mode` | `bypassPermissions` | passed as `--permission-mode` |

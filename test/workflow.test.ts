@@ -50,3 +50,14 @@ test('strict rendering: attempt null is fine, unknown variables and filters fail
   await assert.rejects(renderPrompt('{{ issue.title | nope }}', issue(), null), /template_/);
   assert.match(await renderPrompt('', issue(), null), /configured tracker/);
 });
+
+test('checks: off by default, defaults when set, handoff_state must not be active or terminal', () => {
+  const build = (extra: string) => buildConfig(loadWorkflow(writeWorkflow(tmp(), `tracker: { kind: jira }\n${extra}`)));
+  assert.deepEqual(build('').checks.commands, []);
+  const cfg = build('checks: { commands: [make test] }');
+  assert.deepEqual(cfg.checks, { commands: ['make test'], handoffState: 'Human Review', timeoutMs: 600_000 });
+  assert.equal(build('checks: { commands: [x], handoff_state: Review, timeout_ms: 5 }').checks.timeoutMs, 5);
+  assert.throws(() => build('checks: { commands: [x], handoff_state: in progress }'), /checks.handoff_state/);
+  assert.throws(() => build('checks: { commands: [x], handoff_state: Done }'), /checks.handoff_state/);
+  assert.throws(() => build('checks: { commands: [x], timeout_ms: 0 }'), /checks.timeout_ms/);
+});

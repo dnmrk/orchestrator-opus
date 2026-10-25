@@ -25,6 +25,11 @@ hooks:
 agent:
   max_concurrent_agents: 2
   max_turns: 10
+# checks:                            # Symphony runs these when the agent moves a ticket to the handoff state
+#   commands:
+#     - docker compose exec -T web vendor/bin/phpunit
+#   handoff_state: Human Review
+#   timeout_ms: 600000
 claude:
   command: claude
   model: opus
@@ -56,7 +61,7 @@ This is follow-up attempt #{{ attempt }}. Resume from the current workspace stat
 1. If the ticket is in "To Do", transition it to "In Progress".
 2. Implement the change on the current branch with focused commits.
 3. Push and open a PR with `gh pr create --fill`; link the PR in a ticket comment.
-4. Transition the ticket to "Human Review" (the handoff state — not active, so Symphony stops here).
+4. Transition the ticket to "Human Review" (the handoff state — not active, so Symphony stops here). If checks are configured, Symphony gates that state: it runs them and moves the ticket back to you with the output if they fail.
 5. If truly blocked (missing access, secrets, ambiguous requirements), comment what is missing and transition to "Blocked".
 
 Your final message reports what was done and any blockers, nothing else.

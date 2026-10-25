@@ -34,7 +34,7 @@ export function runHook(
   timeoutMs: number,
   env: Record<string, string> = {},
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<string> {
   log('info', 'hook start', { hook: name, cwd });
   return new Promise((resolvePromise, reject) => {
     const child = spawn('bash', ['-lc', orphanGuard() + script], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -56,7 +56,7 @@ export function runHook(
     child.on('close', (code) => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
-      if (code === 0) resolvePromise();
+      if (code === 0) resolvePromise(tail.trim().slice(-1000));
       else fail(`hook ${name} exited ${code}: ${tail.trim().slice(-1000)}`);
     });
   });

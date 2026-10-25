@@ -59,6 +59,8 @@ export type Config = {
     turnTimeoutMs: number;
     stallTimeoutMs: number;
   };
+  /** Extension: commands Symphony runs when an agent moves a ticket to handoffState; none = no gate. */
+  checks: { commands: string[]; handoffState: string; timeoutMs: number };
 };
 
 export function loadWorkflow(path: string): Workflow {
@@ -138,6 +140,11 @@ export function buildConfig(wf: Workflow): Config {
     if (Number.isInteger(n) && (n as number) > 0) byState[norm(state)] = n as number;
   }
 
+  const handoffState = str(c.checks?.handoff_state)?.trim() ?? 'Human Review';
+  if ([...activeStates, ...terminalStates].some((s) => norm(s) === norm(handoffState))) {
+    throw new WorkflowError('invalid_config', 'checks.handoff_state must not be an active or terminal state');
+  }
+
   const claude = c.claude ?? {};
   const command = str(claude.command) ?? 'claude';
   const workflowDir = dirname(resolve(wf.path));
@@ -186,6 +193,11 @@ export function buildConfig(wf: Workflow): Config {
       allowedTools: strList(claude.allowed_tools, 'claude.allowed_tools') ?? [],
       turnTimeoutMs: int(claude.turn_timeout_ms, 3_600_000, 'claude.turn_timeout_ms', 1000),
       stallTimeoutMs: int(claude.stall_timeout_ms, 300_000, 'claude.stall_timeout_ms', -Infinity),
+    },
+    checks: {
+      commands: strList(c.checks?.commands, 'checks.commands') ?? [],
+      handoffState,
+      timeoutMs: int(c.checks?.timeout_ms, 600_000, 'checks.timeout_ms', 1),
     },
   };
 }

@@ -24,6 +24,8 @@ type Running = {
   lastMessage: string | null;
   tokens: { input: number; output: number };
   workspace: string | null;
+  /** Handoff checks are running; exempt from stall detection (they have their own timeout). */
+  checking?: boolean;
   events: { at: number; event: string; message: string | null }[];
 };
 
@@ -55,6 +57,14 @@ export function continuationPrompt(issue: Issue, turn: number, maxTurns: number)
     `Continue working on ${issue.identifier}. It is still in "${issue.state}", which is an active state (turn ${turn} of ${maxTurns}).`,
     'Pick up from the current workspace state; do not redo finished work.',
     'If the work is complete, move the issue to its handoff state. If you are blocked, record why on the issue and move it accordingly.',
+  ].join('\n');
+}
+
+export function checksFailedPrompt(issue: Issue, failure: string, turn: number, maxTurns: number): string {
+  return [
+    `You moved ${issue.identifier} to its handoff state, but Symphony's checks failed, so it was moved back to "${issue.state}" (turn ${turn} of ${maxTurns}).`,
+    failure,
+    'Fix the cause in the workspace, then move the issue to its handoff state again. The checks run again each time.',
   ].join('\n');
 }
 
@@ -252,8 +262,12 @@ export class Orchestrator {
     const env = hookEnv(e.identifier, ws.path);
     if (cfg.hooks.beforeRun) await runHook('before_run', cfg.hooks.beforeRun, ws.path, cfg.hooks.timeoutMs, env, e.abort.signal);
     try {
+      let failure: string | null = null;
       for (let turn = 1; ; turn++) {
-        const prompt = turn === 1 ? await renderPrompt(this.workflow.promptTemplate, e.issue, e.attempt) : continuationPrompt(e.issue, turn, cfg.agent.maxTurns);
+        const prompt = turn === 1 ? await renderPrompt(this.workflow.promptTemplate, e.issue, e.attempt)
+          : failure ? checksFailedPrompt(e.issue, failure, turn, cfg.agent.maxTurns)
+          : continuationPrompt(e.issue, turn, cfg.agent.maxTurns);
+        failure = null;
         e.turns = turn;
         await runTurn({
           cfg: cfg.claude,
@@ -267,13 +281,50 @@ export class Orchestrator {
         });
         const [fresh] = await this.tracker.fetchIssuesByIds([e.issue.id]);
         if (!fresh) return false;
+        const prev = e.issue.state;
         e.issue = fresh;
+        if (cfg.checks.commands.length && norm(fresh.state) === norm(cfg.checks.handoffState) && this.routable(fresh)) {
+          failure = await this.runChecks(e, ws.path, env, prev);
+          if (!failure) return false;
+          if (turn >= cfg.agent.maxTurns) return true;
+          continue;
+        }
         if (!this.isActive(fresh.state) || !this.routable(fresh)) return false;
         if (turn >= cfg.agent.maxTurns) return true;
       }
     } finally {
       if (cfg.hooks.afterRun) await runHook('after_run', cfg.hooks.afterRun, ws.path, cfg.hooks.timeoutMs, env).catch(() => {});
     }
+  }
+
+  /** Gate for an agent's move to the handoff state. Returns null if every check passed, else the failure (the ticket is moved back to `prev`). */
+  async runChecks(e: Running, cwd: string, env: Record<string, string>, prev: string): Promise<string | null> {
+    const { commands, timeoutMs } = this.cfg.checks;
+    e.checking = true;
+    e.lastMessage = 'Running checks';
+    let failure: string | null = null;
+    try {
+      for (const cmd of commands) {
+        try {
+          await runHook('check', cmd, cwd, timeoutMs, env, e.abort.signal);
+        } catch (x) {
+          failure = `Check failed: ${cmd}\n${errMsg(x)}`;
+          break;
+        }
+      }
+    } finally {
+      e.checking = false;
+    }
+    if (!failure) {
+      const sha = await runHook('git head', 'git rev-parse HEAD', cwd, 10_000, env, e.abort.signal).catch(() => null);
+      await this.tracker.comment?.(e.identifier, `Symphony checks passed${sha ? ` at ${sha}` : ''}:\n${commands.map((c) => `- ${c}`).join('\n')}`);
+      return null;
+    }
+    await this.tracker.comment?.(e.identifier, `Symphony: ${failure}`);
+    if (!this.tracker.transition) throw new Error('tracker has no transition tool');
+    await this.tracker.transition(e.identifier, prev);
+    [e.issue] = await this.tracker.fetchIssuesByIds([e.issue.id]);
+    return failure;
   }
 
   onAgentEvent(e: Running, ev: AgentEvent) {
@@ -395,7 +446,7 @@ export class Orchestrator {
     const now = Date.now();
     if (stallMs > 0) {
       for (const e of this.running.values()) {
-        if (now - (e.lastEventAt ?? e.startedAt) > stallMs) this.stopRun(e, `stalled: no agent events for ${stallMs}ms`, false, false);
+        if (!e.checking && now - (e.lastEventAt ?? e.startedAt) > stallMs) this.stopRun(e, `stalled: no agent events for ${stallMs}ms`, false, false);
       }
     }
     const ids = [...this.running.values()].filter((e) => !e.stop).map((e) => e.issue.id);
@@ -413,6 +464,7 @@ export class Orchestrator {
       const issue = byId.get(id);
       if (!issue) this.stopRun(e, 'issue no longer visible', true, false);
       else if (this.isTerminal(issue.state)) this.stopRun(e, `issue is terminal (${issue.state})`, true, true);
+      else if (this.cfg.checks.commands.length && norm(issue.state) === norm(this.cfg.checks.handoffState)) e.issue = issue; // the worker owns the gate
       else if (!this.isActive(issue.state)) this.stopRun(e, `issue left active states (${issue.state})`, true, false);
       else if (!this.routable(issue)) this.stopRun(e, 'issue no longer routable', true, false);
       else e.issue = issue;

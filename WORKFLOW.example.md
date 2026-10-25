@@ -30,6 +30,11 @@ agent:
   max_concurrent_agents: 1
   max_turns: 10
   blocked_state: Blocked              # where a ticket goes if it uses all turns without a handoff
+# checks:                            # Symphony runs these when the agent moves a ticket to the handoff state
+#   commands:
+#     - docker compose exec -T web vendor/bin/phpunit
+#   handoff_state: Human Review
+#   timeout_ms: 600000
 claude:
   command: claude
   model: opus
@@ -60,7 +65,7 @@ This is follow-up attempt #{{ attempt }}. Resume from the current workspace stat
 2. Implement the change on the current branch with focused commits.
 3. `git push origin HEAD` (pushes the branch back into the local project repo).
 4. Comment a short summary: what changed, how it was verified, the branch name.
-5. Transition the ticket to "Human Review" (not an active state, so Symphony stops here).
+5. Transition the ticket to "Human Review" (not an active state, so Symphony stops here). If checks are configured, Symphony gates that state: it runs them and moves the ticket back to you with the output if they fail.
 6. If truly blocked, comment what is missing and transition to "Blocked".
 
 Your final message reports what was done and any blockers, nothing else.

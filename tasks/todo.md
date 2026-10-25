@@ -60,7 +60,7 @@ Not verified: phone-width layout (window resize didn't apply), light theme scree
 ## Round 6 — shopware_latest on the main stack
 - [x] `workspace.shared` (never created/deleted, concurrency forced to 1) + test (34/34)
 - [x] ~/symphony-board/WORKFLOW.md: before_run guards (web container running; no uncommitted tracked changes off the agent branch), agent/<ID> branch from upgrade/v6.7.13.0, after_run returns to base when clean; Shopware prompt (container-only commands, no destructive DB ops, git add specific paths)
-- Pending user: stop aemwebshop + `make up` in shopware_latest; commit/stash the 3 tracked changes; restart Symphony
+- [x] User: stop aemwebshop + `make up` in shopware_latest; commit/stash the 3 tracked changes; restart Symphony (confirmed 2026-10-25)
 
 ## Round 7 — Linear-style board
 - [x] Linear layout: Inter, status icons per state, cards (key, icon+title, priority/agent/labels, Updated date), column ⋯ (hide) and + (new issue in column), hidden-columns list (counts, click to show, drop to move), Filter, `c` shortcut, theme toggle (system/light/dark)
@@ -146,4 +146,4 @@ Live smoke (2026-10-25, host Symphony from the worktree, sandbox board + throwaw
 check 1 failed ("must contain exactly one line: Hello, Symphony!") → failure comment → turn 2 resumed the SAME session
 (1 dispatch, 1 session id) → agent fixed + committed → both checks passed → comment `checks passed at a54c634…`, which matches
 the workspace HEAD with a clean tree → ticket stayed in Human Review. 2 turns, 19 s. Merged to main (ff), 48/48 + typecheck in `app`.
-Note: the live service (pid 55224) still runs the pre-merge code until it's restarted, and ~/symphony-board has no `checks:` block yet.
+Live service restarted on the merged code (2026-10-25 15:28), and ~/symphony-board/WORKFLOW.md now has a `checks:` block.

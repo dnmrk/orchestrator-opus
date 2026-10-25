@@ -3,7 +3,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { Liquid } from 'liquidjs';
-import { envRef, errMsg, norm, type Issue } from './core.ts';
+import { envRef, errMsg, norm, parseAgentSelection, type AgentProvider, type Issue } from './core.ts';
 
 export class WorkflowError extends Error {
   code: string;
@@ -44,6 +44,7 @@ export type Config = {
     timeoutMs: number;
   };
   agent: {
+    provider: AgentProvider;
     maxConcurrent: number;
     maxTurns: number;
     maxRetryBackoffMs: number;
@@ -56,6 +57,13 @@ export type Config = {
     model: string | null;
     permissionMode: string;
     allowedTools: string[];
+    turnTimeoutMs: number;
+    stallTimeoutMs: number;
+  };
+  codex: {
+    command: string;
+    model: string;
+    sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
     turnTimeoutMs: number;
     stallTimeoutMs: number;
   };
@@ -147,6 +155,19 @@ export function buildConfig(wf: Workflow): Config {
   }
 
   const claude = c.claude ?? {};
+  const codex = c.codex ?? {};
+  let provider: AgentProvider;
+  try {
+    provider = parseAgentSelection(c.agent?.provider ?? 'claude', null).provider!;
+    parseAgentSelection('claude', typeof claude.model === 'string' ? str(claude.model)?.trim() : claude.model);
+    parseAgentSelection('codex', typeof codex.model === 'string' ? str(codex.model)?.trim() : codex.model);
+  } catch (e) {
+    throw new WorkflowError('invalid_config', errMsg(e));
+  }
+  const sandbox = codex.sandbox ?? 'workspace-write';
+  if (!['read-only', 'workspace-write', 'danger-full-access'].includes(sandbox)) {
+    throw new WorkflowError('invalid_config', 'codex.sandbox must be read-only, workspace-write, or danger-full-access');
+  }
   const command = str(claude.command) ?? 'claude';
   const workflowDir = dirname(resolve(wf.path));
   const shared = c.workspace?.shared ? expandPath(c.workspace.shared, workflowDir) : null;
@@ -179,6 +200,7 @@ export function buildConfig(wf: Workflow): Config {
       timeoutMs: int(c.hooks?.timeout_ms, 60_000, 'hooks.timeout_ms', 1),
     },
     agent: {
+      provider,
       // One working tree can only host one agent at a time.
       maxConcurrent: shared ? 1 : int(c.agent?.max_concurrent_agents, 10, 'agent.max_concurrent_agents', 1),
       maxTurns: int(c.agent?.max_turns, 20, 'agent.max_turns', 1),
@@ -188,12 +210,19 @@ export function buildConfig(wf: Workflow): Config {
     },
     claude: {
       command,
-      model: str(claude.model),
+      model: str(claude.model)?.trim() ?? null,
       // Unattended runs can't answer permission prompts; see README "Trust posture".
       permissionMode: str(claude.permission_mode) ?? 'bypassPermissions',
       allowedTools: strList(claude.allowed_tools, 'claude.allowed_tools') ?? [],
       turnTimeoutMs: int(claude.turn_timeout_ms, 3_600_000, 'claude.turn_timeout_ms', 1000),
       stallTimeoutMs: int(claude.stall_timeout_ms, 300_000, 'claude.stall_timeout_ms', -Infinity),
+    },
+    codex: {
+      command: str(codex.command) ?? 'codex',
+      model: str(codex.model)?.trim() ?? 'gpt-6.1-sol',
+      sandbox,
+      turnTimeoutMs: int(codex.turn_timeout_ms, 3_600_000, 'codex.turn_timeout_ms', 1000),
+      stallTimeoutMs: int(codex.stall_timeout_ms, 300_000, 'codex.stall_timeout_ms', -Infinity),
     },
     checks: {
       commands: checkCommands,

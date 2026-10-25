@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promi
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Document, parseDocument } from 'yaml';
-import { errMsg, lockFile, log, norm, TrackerError, type BlockerRef, type Issue, type NewTicket, type Tracker, type TrackerTools } from './core.ts';
+import { errMsg, lockFile, log, norm, parseAgentSelection, TrackerError, type AgentSelection, type BlockerRef, type Issue, type NewTicket, type Tracker, type TrackerTools } from './core.ts';
 import { expandPath } from './workflow.ts';
 
 // Optional `---` YAML header, then the markdown body.
@@ -56,6 +56,7 @@ export class LocalTracker implements Tracker, TrackerTools {
   }
 
   async normalize(identifier: string, t: Ticket): Promise<Issue> {
+    const selection = parseAgentSelection(t.meta.agent_provider, t.meta.agent_model);
     const body = t.body.trim();
     const title = str(t.meta.title) ?? /^#\s+(.+)$/m.exec(body)?.[1]?.trim() ?? null;
     const state = str(t.meta.state);
@@ -68,6 +69,8 @@ export class LocalTracker implements Tracker, TrackerTools {
     );
     return {
       id: identifier,
+      agent_provider: selection.provider,
+      agent_model: selection.model,
       native_ref: { path: t.path },
       identifier,
       title,
@@ -133,6 +136,7 @@ export class LocalTracker implements Tracker, TrackerTools {
 
   /** Next free `<prefix>-<n>`; `wx` makes a concurrent create fail instead of overwriting. */
   async create(t: NewTicket): Promise<string> {
+    const selection = parseAgentSelection(t.agent_provider, t.agent_model);
     await mkdir(this.dir, { recursive: true });
     const pattern = new RegExp(`^${this.prefix}-(\\d+)\\.md$`);
     const max = Math.max(0, ...(await readdir(this.dir)).map((f) => Number(pattern.exec(f)?.[1] ?? 0)));
@@ -143,6 +147,8 @@ export class LocalTracker implements Tracker, TrackerTools {
       ...(t.labels.length ? { labels: t.labels } : {}),
       ...(t.priority ? { priority: t.priority } : {}),
       created: new Date().toISOString(),
+      ...(selection.provider ? { agent_provider: selection.provider } : {}),
+      ...(selection.model ? { agent_model: selection.model } : {}),
     });
     await writeFile(join(this.dir, `${identifier}.md`), `---\n${String(header)}---\n${t.description.trim()}\n`, { flag: 'wx' });
     return identifier;
@@ -184,5 +190,16 @@ export class LocalTracker implements Tracker, TrackerTools {
       return this.serialize(t);
     });
     return state;
+  }
+
+  async setAgent(identifier: string, selection: AgentSelection): Promise<void> {
+    const { provider, model } = parseAgentSelection(selection.provider, selection.model);
+    await this.update(identifier, (t) => {
+      if (provider) t.doc.set('agent_provider', provider);
+      else t.doc.delete('agent_provider');
+      if (model) t.doc.set('agent_model', model);
+      else t.doc.delete('agent_model');
+      return this.serialize(t);
+    });
   }
 }

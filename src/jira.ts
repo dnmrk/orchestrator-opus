@@ -1,4 +1,4 @@
-import { envRef, log, norm, TrackerError, type BlockerRef, type Issue, type Tracker, type TrackerTools } from './core.ts';
+import { envRef, log, norm, parseAgentSelection, TrackerError, type AgentSelection, type BlockerRef, type Issue, type Tracker, type TrackerTools } from './core.ts';
 
 const FIELDS = ['summary', 'description', 'status', 'priority', 'labels', 'assignee', 'issuelinks', 'created', 'updated', 'project'];
 const PRIORITY: Record<string, number> = { highest: 1, high: 2, medium: 3, low: 4 };
@@ -122,6 +122,16 @@ export class JiraTracker implements Tracker, TrackerTools {
 
   normalize(raw: any): Issue | null {
     const f = raw?.fields ?? {};
+    const labels: string[] = Array.isArray(f.labels) ? f.labels.map(String) : [];
+    const providers = labels.filter((l) => l.startsWith('symphony:agent:'));
+    const models = labels.filter((l) => l.startsWith('symphony:model:'));
+    if (providers.length > 1 || models.length > 1) return null;
+    let selection: AgentSelection;
+    try {
+      selection = parseAgentSelection(providers[0]?.slice('symphony:agent:'.length), models[0]?.slice('symphony:model:'.length));
+    } catch {
+      return null;
+    }
     const id = raw?.id != null ? String(raw.id) : '';
     const key = typeof raw?.key === 'string' ? raw.key : '';
     const title = typeof f.summary === 'string' ? f.summary : '';
@@ -139,6 +149,8 @@ export class JiraTracker implements Tracker, TrackerTools {
 
     return {
       id,
+      agent_provider: selection.provider,
+      agent_model: selection.model,
       native_ref: { key, project: strOrNull(f.project?.key) },
       identifier: key,
       title,
@@ -211,6 +223,16 @@ export class JiraTracker implements Tracker, TrackerTools {
   }
 
   // Agent tools (SPEC 11.5): writes run here with the configured credential.
+
+  async setAgent(key: string, selection: AgentSelection): Promise<void> {
+    const { provider, model } = parseAgentSelection(selection.provider, selection.model);
+    const path = `/rest/api/3/issue/${encodeURIComponent(key)}`;
+    const raw = await this.request('GET', `${path}?fields=labels`);
+    if (!Array.isArray(raw?.fields?.labels)) throw new TrackerError('tracker_response', 'issue has no labels array');
+    const remove = raw.fields.labels.filter((l: string) => l.startsWith('symphony:agent:') || l.startsWith('symphony:model:'));
+    const add = [...(provider ? [`symphony:agent:${provider}`] : []), ...(model ? [`symphony:model:${model}`] : [])];
+    await this.request('PUT', path, { update: { labels: [...remove.map((l: string) => ({ remove: l })), ...add.map((l) => ({ add: l }))] } });
+  }
 
   async comment(key: string, text: string): Promise<void> {
     if (!text.trim()) throw new Error('comment text is empty');

@@ -10,10 +10,10 @@ export type AgentEvent = {
   usage?: { input: number; output: number };
   costUsd?: number;
   rateLimits?: unknown;
+  sessionId?: string;
 };
 
 export type TurnOptions = {
-  cfg: Config['claude'];
   cwd: string;
   sessionId: string;
   resume: boolean;
@@ -21,7 +21,7 @@ export type TurnOptions = {
   env: NodeJS.ProcessEnv;
   signal: AbortSignal;
   onEvent: (e: AgentEvent) => void;
-};
+} & ({ provider?: 'claude'; cfg: Config['claude'] } | { provider: 'codex'; cfg: Config['codex'] });
 
 export function claudeCommand(cfg: Config['claude'], sessionId: string, resume: boolean): string {
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', cfg.permissionMode];
@@ -29,6 +29,31 @@ export function claudeCommand(cfg: Config['claude'], sessionId: string, resume: 
   if (cfg.model) args.push('--model', cfg.model);
   if (cfg.allowedTools.length) args.push('--allowedTools', ...cfg.allowedTools); // variadic, keep last
   return `${cfg.command} ${args.map(shq).join(' ')}`;
+}
+
+export function codexCommand(cfg: Config['codex'], sessionId: string, resume: boolean): string {
+  if (resume && !sessionId) throw new Error('cannot resume Codex without a thread ID');
+  const args = ['-c', 'approval_policy="never"', '-c', `sandbox_mode="${cfg.sandbox}"`, 'exec'];
+  if (resume) args.push('resume');
+  args.push('--json', '--model', cfg.model);
+  if (resume) args.push(sessionId);
+  args.push('-');
+  return `${cfg.command} ${args.map(shq).join(' ')}`;
+}
+
+export function summarizeCodex(ev: any, at = Date.now()): AgentEvent {
+  const event: AgentEvent = { type: ev.type, at };
+  if (ev.type === 'thread.started' && typeof ev.thread_id === 'string') event.sessionId = ev.thread_id;
+  if (ev.type === 'turn.completed') {
+    // Codex input_tokens already includes cached_input_tokens.
+    event.usage = { input: ev.usage?.input_tokens ?? 0, output: ev.usage?.output_tokens ?? 0 };
+  }
+  const message = ev.item?.text ?? ev.item?.command ?? ev.error?.message ?? ev.message;
+  if (typeof message === 'string') event.message = message.slice(0, 500);
+  if (ev.item?.type === 'file_change' && Array.isArray(ev.item.changes)) {
+    event.message = ev.item.changes.map((c: any) => c?.path).filter(Boolean).join(', ').slice(0, 500);
+  }
+  return event;
 }
 
 /** Condenses one stream-json line into what the orchestrator tracks. */
@@ -56,11 +81,13 @@ export function summarize(ev: any, at = Date.now()): AgentEvent {
   return { type, at, message: message || undefined };
 }
 
-/** One Claude Code invocation = one SPEC "turn". Resolves on a successful `result`, rejects otherwise. */
+/** One CLI invocation = one turn. Require a terminal success event and a clean process exit. */
 export function runTurn(o: TurnOptions): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     if (o.signal.aborted) return reject(new Error(String(o.signal.reason ?? 'aborted')));
-    const child = spawn('bash', ['-lc', orphanGuard() + claudeCommand(o.cfg, o.sessionId, o.resume)], {
+    const codex = o.provider === 'codex';
+    const command = o.provider === 'codex' ? codexCommand(o.cfg, o.sessionId, o.resume) : claudeCommand(o.cfg, o.sessionId, o.resume);
+    const child = spawn('bash', ['-lc', orphanGuard() + command], {
       cwd: o.cwd,
       env: o.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -72,17 +99,21 @@ export function runTurn(o: TurnOptions): Promise<void> {
     let result: any = null;
     let stderr = '';
     let timedOut = false;
+    let sessionId = o.resume ? o.sessionId : '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     createInterface({ input: child.stdout }).on('line', (line) => {
       if (!line.trim()) return;
       let ev: any;
       try {
         ev = JSON.parse(line);
+        if (!ev || typeof ev !== 'object' || typeof ev.type !== 'string') throw new Error('invalid event');
       } catch {
         return o.onEvent({ type: 'malformed', at: Date.now(), message: line.slice(0, 200) });
       }
-      if (ev.type === 'result') result = ev;
-      o.onEvent(summarize(ev));
+      if (codex ? ev.type === 'turn.completed' || ev.type === 'turn.failed' : ev.type === 'result') result = ev;
+      const event = codex ? summarizeCodex(ev) : summarize(ev);
+      if (event.sessionId) sessionId = event.sessionId;
+      o.onEvent(event);
     });
 
     const onAbort = () => killTree(child);
@@ -99,9 +130,12 @@ export function runTurn(o: TurnOptions): Promise<void> {
       if (timedOut) reject(new Error(`turn_timeout after ${o.cfg.turnTimeoutMs}ms`));
       else if (o.signal.aborted) reject(new Error(String(o.signal.reason ?? 'aborted')));
       else if (!result) reject(new Error(`agent exited ${code ?? sig} without a result: ${stderr.trim().slice(-500)}`));
-      else if (result.is_error || result.subtype !== 'success') {
+      else if (codex && result.type === 'turn.failed') reject(new Error(`turn failed: ${String(result.error?.message ?? 'Codex turn failed').slice(0, 300)}`));
+      else if (!codex && (result.is_error || result.subtype !== 'success')) {
         reject(new Error(`turn failed (${result.subtype}): ${String(result.result ?? '').slice(0, 300)}`));
-      } else resolvePromise();
+      } else if (code !== 0) reject(new Error(`agent exited ${code ?? sig}: ${stderr.trim().slice(-500)}`));
+      else if (codex && !sessionId) reject(new Error('Codex completed without a thread ID'));
+      else resolvePromise();
     });
   });
 }

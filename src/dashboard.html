@@ -200,6 +200,12 @@
     .issue-main { padding: 22px 16px 28px; }
     .issue-side { border-left: 0; border-top: 1px solid var(--line); padding: 18px 16px 28px; }
   }
+  .agent-fields { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 22px 16px; align-items: center; }
+  .agent-model { min-width: 0; width: 100%; max-width: 240px; border: 1px solid var(--line); border-radius: 5px; padding: 7px; background: var(--card); color: var(--text); font: inherit; }
+  .agent-settings { display: grid; gap: 8px; }
+  .agent-settings label { display: grid; gap: 5px; }
+  .agent-settings .row { display: flex; gap: 6px; }
+  fieldset.agent-settings { border: 0; padding: 0; margin: 0; min-width: 0; }
 </style>
 </head>
 <body>
@@ -262,6 +268,11 @@
       <span class="select" id="create-state-wrap"><span id="create-state-icon"></span><select name="state" id="create-state" aria-label="Status"></select></span>
       <span class="select"><span id="create-prio-icon"></span><select name="priority" id="create-prio" aria-label="Priority"><option value="">No priority</option><option value="1">Urgent</option><option value="2">High</option><option value="3">Medium</option><option value="4">Low</option></select></span>
       <label class="check" id="create-agent-row"><input type="checkbox" name="agent" checked> Agent can pick this up</label>
+    </div>
+    <div class="agent-fields">
+      <label>Coding agent <span class="select"><select name="agent_provider" id="create-provider" aria-label="Coding agent"><option value="claude">Claude</option><option value="codex">Codex</option></select></span></label>
+      <label>Model <input class="agent-model" name="agent_model" id="create-model" aria-label="Model" list="create-models" maxlength="200" autocomplete="off"></label>
+      <datalist id="create-models"></datalist>
     </div>
     <div class="dlg-foot">
       <button class="btn" type="button" id="create-cancel">Cancel</button>
@@ -345,12 +356,17 @@ const visibleCols = () => [...board.columns.filter((c) => !hidden.has(norm(c))),
 const hiddenCols = () => [...board.columns.filter((c) => hidden.has(norm(c))), ...board.hidden_columns.filter((c) => !shown.has(norm(c)))];
 const matches = (t) => !filter || [t.identifier, t.title, ...t.labels].some((v) => norm(v).includes(filter));
 const ticketsIn = (c) => board.tickets.filter((t) => norm(t.state) === norm(c) && matches(t));
+const providerName = (p) => p === 'codex' ? 'Codex' : 'Claude';
+function modelOptions(provider) {
+  const models = provider === 'codex' ? ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'] : ['opus', 'sonnet', 'haiku'];
+  return [...new Set([board.default_models[provider], ...models].filter(Boolean))].map((m) => `<option value="${esc(m)}"></option>`).join('');
+}
 
 // --- Board -----------------------------------------------------------------------
 
 function agentChip(a) {
   if (!a) return '';
-  const label = a.kind === 'running' ? (a.stopping ? 'Agent stopping' : `Agent · turn ${a.turn}/${a.max_turns}`)
+  const label = a.kind === 'running' ? (a.stopping ? 'Agent stopping' : `${providerName(a.provider)} · turn ${a.turn}/${a.max_turns}`)
     : a.kind === 'retrying' ? `Retry ${ago(a.due_at)}` : a.kind === 'checking' ? 'Agent checking' : 'Agent paused';
   return `<span class="chip ${a.kind}" title="${esc(a.last_message ?? a.error ?? '')}"><span class="dot"></span>${esc(label)}</span>`;
 }
@@ -358,6 +374,7 @@ function agentChip(a) {
 function card(t) {
   const props = [
     PRIORITY[t.priority] ? prioIcon(t.priority) : '',
+    `<span class="chip" title="${esc(t.effective_model ?? 'Default model')}">${providerName(t.effective_provider)}</span>`,
     agentChip(t.agent),
     ...t.labels.map((l) => `<span class="chip"><span class="dot"></span>${esc(l)}</span>`),
   ].filter(Boolean).join('');
@@ -505,6 +522,7 @@ let panelKey = '';
 function renderPanel(keepDraft = false, force = false) {
   const t = board?.tickets.find((x) => x.identifier === selected);
   if (!t) return closePanel();
+  if (keepDraft && !force && $('p-agent-form')?.dataset.dirty === 'true') return;
   // Polling re-renders only on change, so an open dropdown or a half-typed comment isn't disturbed.
   const key = JSON.stringify([t, detail?.recent_events, detail?.workspace]);
   if (keepDraft && !force && key === panelKey) return;
@@ -551,6 +569,13 @@ function renderPanel(keepDraft = false, force = false) {
       </div>
       <div>
         <p class="side-title">Agent</p>
+        ${board.can_set_agent ? `<form id="p-agent-form"><fieldset id="p-agent-fields" class="agent-settings">
+          <label>Coding agent <span class="select"><select id="p-provider" aria-label="Coding agent"><option value=""${!t.agent_provider ? ' selected' : ''}>Default (${providerName(board.default_provider)})</option>${['claude', 'codex'].map((p) => `<option value="${p}"${t.agent_provider === p ? ' selected' : ''}>${providerName(p)}</option>`).join('')}</select></span></label>
+          <label>Model <input class="agent-model" id="p-model" aria-label="Model" maxlength="200" autocomplete="off" list="p-models" value="${esc(t.agent_model ?? '')}" placeholder="${esc(board.default_models[t.effective_provider] ?? 'CLI default')}"></label>
+          <datalist id="p-models">${modelOptions(t.effective_provider)}</datalist>
+          <div class="row"><button class="btn" id="p-agent-save" type="submit" disabled>Save agent</button><button class="btn" id="p-agent-reset" type="button" disabled>Reset</button></div>
+          <p class="muted">${a?.kind === 'running' ? `Running ${providerName(a.provider)}${a.model ? ` · ${esc(a.model)}` : ''}. Changes apply to the next run.` : 'Save your choice before moving this issue to Todo.'}</p>
+        </fieldset></form>` : `<p>${providerName(t.effective_provider)} · ${esc(t.effective_model ?? 'Default model')}</p>`}
         <dl class="attrs">
           <dt>State</dt><dd>${a ? agentChip(a) : '<span class="muted">Not working on this</span>'}</dd>
           ${detail?.attempts?.restart_count ? `<dt>Runs</dt><dd>${detail.attempts.restart_count} this session</dd>` : ''}
@@ -570,6 +595,39 @@ function renderPanel(keepDraft = false, force = false) {
   $('p-comment').value = draft;
   if (hadFocus) $('p-comment').focus();
   $('p-state').addEventListener('change', (ev) => move(t.identifier, ev.target.value));
+  if ($('p-agent-form')) {
+    const dirty = () => {
+      $('p-agent-form').dataset.dirty = 'true';
+      $('p-agent-save').disabled = false;
+      $('p-agent-reset').disabled = false;
+      $('p-state').disabled = true;
+    };
+    $('p-provider').addEventListener('change', () => {
+      const provider = $('p-provider').value || board.default_provider;
+      $('p-model').value = '';
+      $('p-model').placeholder = board.default_models[provider] ?? 'CLI default';
+      $('p-models').innerHTML = modelOptions(provider);
+      dirty();
+    });
+    $('p-model').addEventListener('input', dirty);
+    $('p-agent-reset').addEventListener('click', () => renderPanel(true, true));
+    $('p-agent-form').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const form = ev.currentTarget;
+      const fields = $('p-agent-fields');
+      const saveButton = $('p-agent-save');
+      const model = $('p-model').value.trim() || null;
+      const provider = $('p-provider').value || (model ? board.default_provider : null);
+      fields.disabled = true;
+      try {
+        await api(`/api/v1/tickets/${encodeURIComponent(t.identifier)}/agent`, { agent_provider: provider, agent_model: model });
+        form.dataset.dirty = 'false';
+        toast('Agent selection saved');
+        await refresh();
+        if (selected === t.identifier) renderPanel(true, true);
+      } catch (e) { fields.disabled = false; saveButton.disabled = false; toast(`Couldn't save agent: ${e.message}`, true); }
+    });
+  }
   $('p-comment-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const text = $('p-comment').value.trim();
@@ -594,6 +652,8 @@ function openCreate(stateName) {
   $('create-project').textContent = board.title;
   $('create-state').innerHTML = allStates().map((c) => `<option${norm(c) === norm(stateName ?? board.columns[0]) ? ' selected' : ''}>${esc(c)}</option>`).join('');
   $('create-agent-row').hidden = !board.required_labels.length;
+  $('create-provider').value = board.default_provider;
+  syncCreateModel();
   syncCreateIcons();
   $('create').showModal();
 }
@@ -601,6 +661,13 @@ function syncCreateIcons() {
   $('create-state-icon').innerHTML = statusIcon($('create-state').value);
   $('create-prio-icon').innerHTML = prioIcon(Number($('create-prio').value) || null);
 }
+function syncCreateModel() {
+  const provider = $('create-provider').value;
+  $('create-model').value = '';
+  $('create-model').placeholder = board.default_models[provider] ?? 'CLI default';
+  $('create-models').innerHTML = modelOptions(provider);
+}
+$('create-provider').addEventListener('change', syncCreateModel);
 $('create-state').addEventListener('change', syncCreateIcons);
 $('create-prio').addEventListener('change', syncCreateIcons);
 $('new').addEventListener('click', () => openCreate());
@@ -613,6 +680,7 @@ $('create-form').addEventListener('submit', async (ev) => {
     const { identifier } = await api('/api/v1/tickets', {
       title: f.get('title'), description: f.get('description'), state: f.get('state'),
       priority: f.get('priority') || null, agent: f.get('agent') === 'on',
+      agent_provider: f.get('agent_provider'), agent_model: String(f.get('agent_model') ?? '').trim() || null,
     });
     $('create').close();
     toast(`${identifier} created`);
@@ -649,10 +717,11 @@ function renderActivity() {
     [`${state.counts.running} of ${state.max_concurrent_agents ?? '?'}`, 'agents working'],
     [state.counts.retrying, 'waiting to retry'],
     [num(t.total_tokens), 'tokens used'],
-    [`$${t.cost_usd.toFixed(2)}`, 'spent since start'],
+    [t.cost_usd == null ? 'Unknown' : `$${t.cost_usd.toFixed(2)}`, 'spent since start'],
     [dur(Math.round(t.seconds_running)), 'agent time'],
   ].map(([b, l]) => `<div class="stat"><b>${esc(b)}</b><span>${esc(l)}</span></div>`).join('');
   $('running').innerHTML = table(state.running, [
+    ['Agent', (r) => `${providerName(r.provider)}${r.model ? ` · ${esc(r.model)}` : ''}`],
     ['Issue', (r) => `<b>${esc(r.issue_identifier)}</b>`], ['Title', (r) => esc(r.title)], ['Turn', (r) => r.turn_count],
     ['Started', (r) => ago(r.started_at)], ['Last activity', (r) => ago(r.last_event_at)],
     ['Latest output', (r) => `<div class="clip" title="${esc(r.last_message)}">${esc(r.last_message ?? '')}</div>`], ['Tokens', (r) => num(r.tokens.total_tokens)],
@@ -662,6 +731,7 @@ function renderActivity() {
     ['Reason', (r) => `<div class="clip" title="${esc(r.error)}">${esc(r.error ?? 'Checking if more work is needed')}</div>`],
   ]);
   $('recent').innerHTML = table(state.recent, [
+    ['Agent', (r) => `${providerName(r.provider)}${r.model ? ` · ${esc(r.model)}` : ''}`],
     ['Issue', (r) => `<b>${esc(r.identifier)}</b>`], ['Result', (r) => esc(r.outcome[0].toUpperCase() + r.outcome.slice(1))], ['When', (r) => ago(r.at)],
     ['Turns', (r) => r.turns], ['Tokens', (r) => num(r.tokens.total_tokens)], ['Note', (r) => `<div class="clip" title="${esc(r.error)}">${esc(r.error ?? '')}</div>`],
   ]);

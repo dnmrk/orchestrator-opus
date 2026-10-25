@@ -2,6 +2,18 @@ import type { ChildProcess } from 'node:child_process';
 import { open, readFile, rm } from 'node:fs/promises';
 
 export type BlockerRef = { id: string | null; identifier: string | null; state: string | null };
+export type AgentProvider = 'claude' | 'codex';
+export type AgentSelection = { provider: AgentProvider | null; model: string | null };
+
+/** Shared validation for workflow defaults, ticket headers, Jira labels, and board writes. */
+export function parseAgentSelection(provider: unknown, model: unknown): AgentSelection {
+  if (provider != null && provider !== 'claude' && provider !== 'codex') throw new Error('agent provider must be claude or codex');
+  if (model != null && (typeof model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(model))) {
+    throw new Error('agent model must be a model ID of at most 200 characters');
+  }
+  if (model != null && provider == null) throw new Error('agent model requires an explicit provider');
+  return { provider: provider ?? null, model: model ?? null };
+}
 
 /** Normalized issue (SPEC 4.1.1). Snake_case keys so WORKFLOW.md templates match the spec. */
 export type Issue = {
@@ -20,6 +32,8 @@ export type Issue = {
   dispatchable: boolean;
   created_at: string | null;
   updated_at: string | null;
+  agent_provider?: AgentProvider | null;
+  agent_model?: string | null;
 };
 
 export interface Tracker {
@@ -33,9 +47,10 @@ export interface TrackerTools {
   transition(identifier: string, state: string): Promise<string>;
   /** Board-only (local tracker): create a ticket, returns its identifier. */
   create?(ticket: NewTicket): Promise<string>;
+  setAgent?(identifier: string, selection: AgentSelection): Promise<void>;
 }
 
-export type NewTicket = { title: string; description: string; state: string; labels: string[]; priority: number | null };
+export type NewTicket = { title: string; description: string; state: string; labels: string[]; priority: number | null; agent_provider?: AgentProvider | null; agent_model?: string | null };
 
 export class TrackerError extends Error {
   category: string;

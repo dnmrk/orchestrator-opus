@@ -122,6 +122,27 @@ test('concurrent comments and a transition on one ticket all land', async () => 
   assert.ok(!existsSync(join(dir, 'ABC-1.md.lock')));
 });
 
+test('agent selection persists across concurrent ticket writes and can return to defaults', async () => {
+  const { dir, tracker } = board(FILES);
+  await Promise.all([
+    tracker.setAgent('ABC-1', { provider: 'codex', model: 'gpt-6-astra' }),
+    tracker.comment('ABC-1', 'Keep this comment'),
+    tracker.transition('ABC-1', 'Human Review'),
+  ]);
+  const [ticket] = await tracker.fetchIssuesByIds(['ABC-1']);
+  assert.equal(ticket.agent_provider, 'codex');
+  assert.equal(ticket.agent_model, 'gpt-6-astra');
+  assert.equal(ticket.state, 'Human Review');
+  assert.match(ticket.description!, /Keep this comment/);
+  assert.match(readFileSync(join(dir, 'ABC-1.md'), 'utf8'), /# set by me/);
+  await tracker.setAgent('ABC-1', { provider: null, model: null });
+  assert.equal((await tracker.fetchIssuesByIds(['ABC-1']))[0].agent_provider, null);
+  await assert.rejects(tracker.setAgent('ABC-1', { provider: null, model: 'gpt-6-astra' }), /explicit provider/);
+  await assert.rejects(tracker.setAgent('../ABC-1', { provider: 'codex', model: null }), /no ticket/);
+  writeFileSync(join(dir, 'ABC-4.md'), '---\nstate: To Do\ntitle: Invalid\nagent_provider: unknown\n---\n');
+  await assert.rejects(tracker.fetchIssuesByIds(['ABC-4']), /provider/);
+});
+
 test('lockFile: a dead holder is taken over, a live one is refused', async () => {
   const path = join(tmp(), 'x.lock');
   writeFileSync(path, String(spawnSync(process.execPath, ['-e', '']).pid));

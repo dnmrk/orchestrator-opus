@@ -3,7 +3,7 @@ import { existsSync, unwatchFile, watchFile } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runTurn, type AgentEvent } from './agent.ts';
-import { errMsg, lockFile, log, norm, type Issue, type Tracker, type TrackerTools } from './core.ts';
+import { errMsg, lockFile, log, norm, type AgentProvider, type Issue, type Tracker, type TrackerTools } from './core.ts';
 import { buildConfig, loadWorkflow, renderPrompt, workflowMtime, type Config, type Workflow } from './workflow.ts';
 import { ensureWorkspace, hookEnv, removeWorkspace, runHook } from './workspace.ts';
 
@@ -18,6 +18,9 @@ type Running = {
   stop?: Stop;
   startedAt: number;
   sessionId: string;
+  provider: AgentProvider;
+  model: string | null;
+  stallTimeoutMs: number;
   turns: number;
   lastEventAt: number | null;
   lastEvent: string | null;
@@ -31,7 +34,7 @@ type Running = {
 
 type Retry = { identifier: string; url: string | null; attempt: number; dueAt: number; timer: NodeJS.Timeout; error: string | null };
 
-type Outcome = { identifier: string; url: string | null; outcome: string; at: number; turns: number; tokens: { input: number; output: number }; error: string | null };
+type Outcome = { identifier: string; url: string | null; provider: AgentProvider; model: string | null; outcome: string; at: number; turns: number; tokens: { input: number; output: number }; error: string | null };
 
 const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
 const tokens = (t: { input: number; output: number }) => ({ input_tokens: t.input, output_tokens: t.output, total_tokens: t.input + t.output });
@@ -81,6 +84,7 @@ export class Orchestrator {
   retries = new Map<string, Retry>();
   completed = new Set<string>();
   totals = { input: 0, output: 0, seconds: 0, costUsd: 0 };
+  costComplete = true;
   rateLimits: unknown = null;
   recent: Outcome[] = [];
   /** issue id → normalized state when it was blocked but couldn't be moved; skipped until the state changes. */
@@ -216,6 +220,9 @@ export class Orchestrator {
   }
 
   dispatch(issue: Issue, attempt: number | null) {
+    const cfg = this.cfg;
+    const provider = issue.agent_provider ?? cfg.agent.provider;
+    const model = issue.agent_model ?? cfg[provider].model;
     const retry = this.retries.get(issue.id);
     if (retry) clearTimeout(retry.timer);
     this.retries.delete(issue.id);
@@ -225,7 +232,10 @@ export class Orchestrator {
       attempt,
       abort: new AbortController(),
       startedAt: Date.now(),
-      sessionId: randomUUID(),
+      sessionId: provider === 'claude' ? randomUUID() : '',
+      provider,
+      model,
+      stallTimeoutMs: cfg[provider].stallTimeoutMs,
       turns: 0,
       lastEventAt: null,
       lastEvent: null,
@@ -236,8 +246,8 @@ export class Orchestrator {
     };
     this.running.set(issue.id, entry);
     this.claimed.add(issue.id);
-    log('info', 'dispatch', { issue: issue.identifier, state: issue.state, attempt, session: entry.sessionId });
-    entry.done = this.runWorker(entry).then(
+    log('info', 'dispatch', { issue: issue.identifier, state: issue.state, attempt, provider, model, session: entry.sessionId });
+    entry.done = this.runWorker(entry, cfg).then(
       (exhausted) => this.onWorkerExit(entry, null, exhausted),
       (e) => this.onWorkerExit(entry, e),
     );
@@ -255,8 +265,8 @@ export class Orchestrator {
   }
 
   /** SPEC 16.5 worker attempt. Uses the config snapshot from dispatch time. Resolves true if max_turns ran out while the issue was still active. */
-  async runWorker(e: Running): Promise<boolean> {
-    const cfg = this.cfg;
+  async runWorker(e: Running, cfg: Config): Promise<boolean> {
+    const template = this.workflow.promptTemplate;
     const ws = await ensureWorkspace(cfg, e.identifier);
     e.workspace = ws.path;
     const env = hookEnv(e.identifier, ws.path);
@@ -264,21 +274,24 @@ export class Orchestrator {
     try {
       let failure: string | null = null;
       for (let turn = 1; ; turn++) {
-        const prompt = turn === 1 ? await renderPrompt(this.workflow.promptTemplate, e.issue, e.attempt)
+        const prompt = turn === 1 ? await renderPrompt(template, e.issue, e.attempt)
           : failure ? checksFailedPrompt(e.issue, failure, turn, cfg.agent.maxTurns)
           : continuationPrompt(e.issue, turn, cfg.agent.maxTurns);
         failure = null;
         e.turns = turn;
-        await runTurn({
-          cfg: cfg.claude,
+        const options = {
           cwd: ws.path,
           sessionId: e.sessionId,
           resume: turn > 1,
           prompt,
           env: this.agentEnv(e.issue, ws.path),
           signal: e.abort.signal,
-          onEvent: (ev) => this.onAgentEvent(e, ev),
-        });
+          onEvent: (ev: AgentEvent) => this.onAgentEvent(e, ev),
+        };
+        if (e.provider === 'codex') {
+          this.costComplete = false; // Codex reports tokens, not a billed USD total.
+          await runTurn({ ...options, provider: 'codex', cfg: { ...cfg.codex, model: e.model! } });
+        } else await runTurn({ ...options, cfg: { ...cfg.claude, model: e.model } });
         const [fresh] = await this.tracker.fetchIssuesByIds([e.issue.id]);
         if (!fresh) return false;
         const prev = e.issue.state;
@@ -329,6 +342,7 @@ export class Orchestrator {
   }
 
   onAgentEvent(e: Running, ev: AgentEvent) {
+    if (ev.sessionId) e.sessionId = ev.sessionId;
     e.lastEventAt = ev.at;
     e.lastEvent = ev.type;
     if (ev.message) e.lastMessage = ev.message;
@@ -353,9 +367,9 @@ export class Orchestrator {
     if (this.running.get(id) !== e) return;
     this.running.delete(id);
     this.totals.seconds += (Date.now() - e.startedAt) / 1000;
-    const summary = { issue: e.identifier, turns: e.turns, tokens: e.tokens, seconds: Math.round((Date.now() - e.startedAt) / 1000) };
+    const summary = { issue: e.identifier, provider: e.provider, model: e.model, turns: e.turns, tokens: e.tokens, seconds: Math.round((Date.now() - e.startedAt) / 1000) };
     const outcome = e.stop?.release ? 'stopped' : err || e.stop ? 'failed' : exhausted ? 'blocked' : 'finished';
-    this.recent.unshift({ identifier: e.identifier, url: e.issue.url, outcome, at: Date.now(), turns: e.turns, tokens: { ...e.tokens }, error: e.stop?.reason ?? (err ? errMsg(err) : null) });
+    this.recent.unshift({ identifier: e.identifier, url: e.issue.url, provider: e.provider, model: e.model, outcome, at: Date.now(), turns: e.turns, tokens: { ...e.tokens }, error: e.stop?.reason ?? (err ? errMsg(err) : null) });
     this.recent.length = Math.min(this.recent.length, 20);
 
     if (e.stop?.release) {
@@ -443,11 +457,11 @@ export class Orchestrator {
 
   /** SPEC 8.5: stall detection, then tracker state refresh for running issues. */
   async reconcile() {
-    const stallMs = this.cfg.claude.stallTimeoutMs;
     const now = Date.now();
-    if (stallMs > 0) {
-      for (const e of this.running.values()) {
-        if (!e.checking && now - (e.lastEventAt ?? e.startedAt) > stallMs) this.stopRun(e, `stalled: no agent events for ${stallMs}ms`, false, false);
+    for (const e of this.running.values()) {
+      const stallMs = e.stallTimeoutMs;
+      if (stallMs > 0 && !e.checking && now - (e.lastEventAt ?? e.startedAt) > stallMs) {
+        this.stopRun(e, `stalled: no agent events for ${stallMs}ms`, false, false);
       }
     }
     const ids = [...this.running.values()].filter((e) => !e.stop).map((e) => e.issue.id);
@@ -482,6 +496,8 @@ export class Orchestrator {
       title: e.issue.title,
       state: e.issue.state,
       session_id: e.sessionId,
+      provider: e.provider,
+      model: e.model,
       turn_count: e.turns,
       attempt: e.attempt,
       last_event: e.lastEvent,
@@ -511,7 +527,7 @@ export class Orchestrator {
       running: [...this.running].map(([id, e]) => this.runningRow(id, e)),
       retrying: [...this.retries].map(([id, r]) => this.retryRow(id, r)),
       recent: this.recent.map((o) => ({ ...o, at: iso(o.at), tokens: tokens(o.tokens) })),
-      agent_totals: { ...tokens(this.totals), seconds_running: Math.round((this.totals.seconds + active) * 10) / 10, cost_usd: Math.round(this.totals.costUsd * 10000) / 10000 },
+      agent_totals: { ...tokens(this.totals), seconds_running: Math.round((this.totals.seconds + active) * 10) / 10, cost_usd: this.costComplete ? Math.round(this.totals.costUsd * 10000) / 10000 : null },
       rate_limits: this.rateLimits,
     };
   }
@@ -539,7 +555,7 @@ export class Orchestrator {
   /** What the agent side is doing with an issue, for board cards. */
   agentStatus(id: string) {
     const e = this.running.get(id);
-    if (e) return { kind: 'running', turn: e.turns, max_turns: this.cfg.agent.maxTurns, last_message: e.lastMessage, stopping: e.stop?.reason ?? null };
+    if (e) return { kind: 'running', provider: e.provider, model: e.model, turn: e.turns, max_turns: this.cfg.agent.maxTurns, last_message: e.lastMessage, stopping: e.stop?.reason ?? null };
     const r = this.retries.get(id);
     if (r) return { kind: r.error ? 'retrying' : 'checking', attempt: r.attempt, due_at: iso(r.dueAt), error: r.error };
     if (this.parked.has(id)) return { kind: 'parked' };
@@ -557,7 +573,13 @@ export class Orchestrator {
       terminal_states: this.cfg.tracker.terminalStates,
       required_labels: this.cfg.tracker.requiredLabels,
       can_create: Boolean(this.tracker.create),
-      tickets: tickets.map((i) => ({ ...i, agent: this.agentStatus(i.id) })),
+      can_set_agent: Boolean(this.tracker.setAgent),
+      default_provider: this.cfg.agent.provider,
+      default_models: { claude: this.cfg.claude.model, codex: this.cfg.codex.model },
+      tickets: tickets.map((i) => {
+        const provider = i.agent_provider ?? this.cfg.agent.provider;
+        return { ...i, effective_provider: provider, effective_model: i.agent_model ?? this.cfg[provider].model, agent: this.agentStatus(i.id) };
+      }),
     };
   }
 

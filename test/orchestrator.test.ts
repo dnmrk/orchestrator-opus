@@ -8,6 +8,7 @@ import { Orchestrator, sortForDispatch } from '../src/orchestrator.ts';
 import { issue, tmp, waitFor, writeWorkflow } from './helpers.ts';
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-claude.mjs', import.meta.url));
+const CODEX = fileURLToPath(new URL('./fixtures/fake-codex.mjs', import.meta.url));
 
 class FakeTracker implements Tracker {
   issues = new Map<string, Issue>();
@@ -22,17 +23,18 @@ class FakeTracker implements Tracker {
   }
 }
 
-function setup(extra = '') {
+function setup(extra = '', provider: 'claude' | 'codex' = 'claude') {
   const dir = tmp();
-  const logFile = join(dir, 'claude.log');
+  const logFile = join(dir, `${provider}.log`);
   writeFileSync(logFile, '');
-  process.env.FAKE_CLAUDE_LOG = logFile;
+  process.env[provider === 'codex' ? 'FAKE_CODEX_LOG' : 'FAKE_CLAUDE_LOG'] = logFile;
   const workflowPath = writeWorkflow(dir, [
     'tracker: { kind: jira, active_states: [To Do, In Progress], terminal_states: [Done] }',
     'polling: { interval_ms: 60000 }',
     'workspace: { root: ws }',
     `claude: { command: node ${FAKE}, model: test-model }`,
-    'agent: { max_turns: 3 }',
+    `codex: { command: node ${CODEX}, model: gpt-6.1-sol }`,
+    `agent: { max_turns: 3, provider: ${provider} }`,
     extra,
   ].join('\n'));
   const tracker = new FakeTracker();
@@ -64,6 +66,87 @@ test('dispatch → continuation turn on the same session → handoff state relea
     assert.equal(calls().length, 2);
   } finally {
     await orch.stop();
+  }
+});
+
+test('a ticket chooses Codex over the Claude default, pins its model across reloads, and resumes its thread', async () => {
+  const { tracker, orch, calls, workflowPath } = setup('', 'codex');
+  // The workflow defaults to Claude, but this ticket explicitly selects Codex.
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('provider: codex', 'provider: claude'));
+  tracker.issues.set('1', issue({ agent_provider: 'codex', agent_model: 'gpt-6-astra' }));
+  let changed = false;
+  tracker.onRefresh = () => {
+    if (calls().length === 1 && !changed) {
+      changed = true;
+      tracker.issues.get('1')!.agent_provider = 'claude';
+      tracker.issues.get('1')!.agent_model = 'sonnet';
+      writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('gpt-6.1-sol', 'gpt-6-luna'));
+      orch.reload();
+    }
+    if (calls().length >= 2) tracker.issues.get('1')!.state = 'Human Review';
+  };
+  await orch.start();
+  try {
+    await waitFor(() => calls().length === 2 && !orch.running.size);
+    const [first, second] = calls();
+    assert.ok(!first.args.includes('resume'));
+    assert.ok(second.args.includes('resume'));
+    assert.equal(second.args.at(-2), 'codex-thread-123');
+    assert.ok(first.args.includes('gpt-6-astra'));
+    assert.ok(second.args.includes('gpt-6-astra'));
+    assert.equal(first.tracker, 'tool-cmd');
+    assert.deepEqual({ input: orch.totals.input, output: orch.totals.output }, { input: 20, output: 10 });
+    assert.equal(orch.snapshot().agent_totals.cost_usd, null);
+    assert.equal(orch.recent[0].provider, 'codex');
+    assert.equal(orch.recent[0].model, 'gpt-6-astra');
+    assert.match(second.prompt, /Continue working on ABC-1/);
+  } finally { await orch.stop(); }
+});
+
+test('a Claude ticket overrides the Codex workflow default', async () => {
+  const { tracker, orch, calls } = setup();
+  orch.reload();
+  orch.cfg.agent.provider = 'codex';
+  tracker.issues.set('1', issue({ agent_provider: 'claude', agent_model: 'sonnet' }));
+  tracker.onRefresh = () => { if (calls().length) tracker.issues.get('1')!.state = 'Human Review'; };
+  await orch.start();
+  try {
+    await waitFor(() => calls().length === 1 && !orch.running.size);
+    assert.ok(calls()[0].args.includes('sonnet'));
+    assert.equal(orch.recent[0].provider, 'claude');
+    assert.equal(orch.snapshot().agent_totals.cost_usd, 0.01);
+  } finally { await orch.stop(); }
+});
+
+test('Codex failure retries and Codex stalls respect the running attempt timeout', async () => {
+  const failed = setup('', 'codex');
+  failed.tracker.issues.set('1', issue());
+  process.env.FAKE_CODEX_MODE = 'failed';
+  await failed.orch.start();
+  try {
+    await waitFor(() => failed.orch.retries.has('1'));
+    assert.match(failed.orch.retries.get('1')!.error!, /test failure/);
+  } finally {
+    await failed.orch.stop();
+    delete process.env.FAKE_CODEX_MODE;
+  }
+  const stalled = setup('', 'codex');
+  stalled.tracker.issues.set('1', issue());
+  process.env.FAKE_CODEX_SLEEP_MS = '20000';
+  await stalled.orch.start();
+  try {
+    await waitFor(() => stalled.orch.running.get('1')?.lastEvent === 'turn.started');
+    const run = stalled.orch.running.get('1')!;
+    assert.equal(run.sessionId, 'codex-thread-123');
+    assert.equal(stalled.orch.snapshot().running[0].provider, 'codex');
+    run.stallTimeoutMs = 1;
+    await new Promise((r) => setTimeout(r, 10));
+    await stalled.orch.reconcile();
+    await waitFor(() => stalled.orch.retries.has('1'));
+    assert.match(stalled.orch.retries.get('1')!.error!, /stalled/);
+  } finally {
+    await stalled.orch.stop();
+    delete process.env.FAKE_CODEX_SLEEP_MS;
   }
 });
 
@@ -109,7 +192,7 @@ test('stalled run is killed and retried', async () => {
   await orch.start();
   try {
     await waitFor(() => orch.running.get('1')?.lastEvent === 'system/init');
-    orch.cfg.claude.stallTimeoutMs = 1;
+    orch.running.get('1')!.stallTimeoutMs = 1;
     await new Promise((r) => setTimeout(r, 10));
     await orch.reconcile();
     await waitFor(() => orch.retries.has('1'));
@@ -218,8 +301,8 @@ test('a second service on the same workspace refuses to start until the first st
   await second.stop();
 });
 
-function gated(extra: string, commands: string[]) {
-  const t = setup(['checks:', '  commands:', ...commands.map((c) => `    - '${c}'`), extra].join('\n'));
+function gated(extra: string, commands: string[], provider: 'claude' | 'codex' = 'claude') {
+  const t = setup(['checks:', '  commands:', ...commands.map((c) => `    - '${c}'`), extra].join('\n'), provider);
   const writes: string[] = [];
   let moved = 0;
   Object.assign(t.tracker, {
@@ -272,6 +355,22 @@ test('failing check comments, moves back, and resumes the same session with the 
   } finally {
     await orch.stop();
   }
+});
+
+test('Codex handoff checks fail once, resume the same thread, then pass', async () => {
+  const { orch, calls, writes } = gated('', ['test -f "$SYMPHONY_WORKSPACE/ok" || { touch "$SYMPHONY_WORKSPACE/ok"; echo boom; exit 1; }'], 'codex');
+  await orch.start();
+  try {
+    await waitFor(() => writes.length === 3 && !orch.running.size);
+    assert.match(writes[0], /boom/);
+    assert.equal(writes[1], 'transition ABC-1 To Do');
+    assert.match(writes[2], /checks passed/);
+    assert.equal(calls().length, 2);
+    assert.ok(calls()[1].args.includes('resume'));
+    assert.equal(calls()[1].args.at(-2), 'codex-thread-123');
+    assert.match(calls()[1].prompt, /checks failed[\s\S]*boom/);
+    assert.equal(orch.recent[0].provider, 'codex');
+  } finally { await orch.stop(); }
 });
 
 test('checks failing on every turn exhaust max_turns and block the issue', async () => {

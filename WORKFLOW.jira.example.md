@@ -23,6 +23,7 @@ hooks:
   before_run: |
     git fetch origin --quiet
 agent:
+  provider: claude                  # default; choose a provider/model on each ticket before Todo
   max_concurrent_agents: 2
   max_turns: 10
 # checks:                            # Symphony runs these when the agent moves a ticket to the handoff state
@@ -37,6 +38,11 @@ claude:
   model: opus
   permission_mode: bypassPermissions   # unattended; see README "Trust posture"
   stall_timeout_ms: 900000             # long test suites emit no events
+codex:
+  command: codex
+  model: gpt-6.1-sol
+  sandbox: workspace-write           # configure network/Docker access for your runner; see README
+  stall_timeout_ms: 900000
 ---
 
 You are working unattended on Jira ticket {{ issue.identifier }}: {{ issue.title }}

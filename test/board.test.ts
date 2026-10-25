@@ -19,6 +19,7 @@ async function boot() {
     'polling: { interval_ms: 60000 }',
     // writes trigger a refresh, which may dispatch DEV-1; `false` makes any such run fail instantly
     'claude: { command: "false" }',
+    'codex: { command: "false" }',
   ].join('\n'));
   const orch = new Orchestrator({ workflowPath, makeTracker: (cfg) => LocalTracker.fromProvider(cfg.tracker.provider, cfg.workflowDir, cfg.tracker.terminalStates), toolCommand: 'x' });
   orch.reload();
@@ -40,6 +41,40 @@ test('board lists tickets in configured columns with agent status', async () => 
     assert.equal(b.can_create, true);
     orch.parked.set('DEV-1', 'to do');
     assert.equal((await (await fetch(base + '/api/v1/board')).json()).tickets[0].agent.kind, 'parked');
+  } finally {
+    server.close();
+    await orch.stop();
+  }
+});
+
+test('ticket provider/model can be chosen before Todo, persists, and rejects invalid writes', async () => {
+  const { dir, orch, server, base, post } = await boot();
+  try {
+    const created = await post('/api/v1/tickets', { title: 'Choose my agent', state: 'Human Review', agent_provider: 'codex', agent_model: 'gpt-6-astra' });
+    const { identifier } = await created.json();
+    assert.equal(created.status, 201);
+    let board = await (await fetch(base + '/api/v1/board')).json();
+    let ticket = board.tickets.find((t: any) => t.identifier === identifier);
+    assert.equal(board.can_set_agent, true);
+    assert.equal(board.default_provider, 'claude');
+    assert.equal(board.default_models.codex, 'gpt-6.1-sol');
+    assert.equal(ticket.effective_provider, 'codex');
+    assert.equal(ticket.effective_model, 'gpt-6-astra');
+    assert.equal((await post(`/api/v1/tickets/${identifier}/agent`, { agent_provider: 'claude', agent_model: 'sonnet' })).status, 200);
+    assert.equal((await post(`/api/v1/tickets/${identifier}/state`, { state: 'To Do' })).status, 200);
+    ticket = (await orch.board()).tickets.find((t) => t.identifier === identifier)!;
+    assert.equal(ticket.agent_provider, 'claude');
+    assert.equal(ticket.agent_model, 'sonnet');
+    assert.match(readFileSync(join(dir, 'tickets', `${identifier}.md`), 'utf8'), /agent_provider: claude\nagent_model: sonnet/);
+    for (const body of [{ agent_provider: 'bad' }, { agent_provider: 'codex', agent_model: 'bad model' }, { agent_model: 'gpt-6-astra' }]) {
+      assert.equal((await post(`/api/v1/tickets/${identifier}/agent`, body)).status, 400);
+      assert.equal((await post('/api/v1/tickets', { title: 'Bad', ...body })).status, 400);
+    }
+    assert.equal((await post(`/api/v1/tickets/${identifier}/agent`, { agent_provider: 'codex' }, { 'content-type': 'text/plain' })).status, 415);
+    assert.equal((await post(`/api/v1/tickets/${identifier}/agent`, { agent_provider: 'codex' }, { 'content-type': 'application/json', origin: 'https://evil.example' })).status, 403);
+    assert.equal((await post(`/api/v1/tickets/${identifier}/agent`, { agent_provider: null, agent_model: null })).status, 200);
+    board = await (await fetch(base + '/api/v1/board')).json();
+    assert.equal(board.tickets.find((t: any) => t.identifier === identifier).effective_provider, 'claude');
   } finally {
     server.close();
     await orch.stop();

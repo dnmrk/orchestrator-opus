@@ -6,7 +6,7 @@ let prompt = '';
 process.stdin.on('data', (d) => (prompt += d));
 process.stdin.on('end', async () => {
   const args = process.argv.slice(2);
-  const sid = args[args.indexOf('--session-id') + 1] ?? args[args.indexOf('--resume') + 1];
+  const sid = args[args.indexOf(args.includes('--resume') ? '--resume' : '--session-id') + 1];
   appendFileSync(process.env.FAKE_CLAUDE_LOG, JSON.stringify({ args, prompt, cwd: process.cwd(), tracker: process.env.SYMPHONY_TRACKER }) + '\n');
   const out = (o) => process.stdout.write(JSON.stringify(o) + '\n');
   out({ type: 'system', subtype: 'init', session_id: sid });

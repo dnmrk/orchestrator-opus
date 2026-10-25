@@ -27,6 +27,7 @@ hooks:
   before_run: |
     git fetch origin --quiet
 agent:
+  provider: claude                    # default for tickets without a choice; claude or codex
   max_concurrent_agents: 1
   max_turns: 10
   blocked_state: Blocked              # where a ticket goes if it uses all turns without a handoff
@@ -42,6 +43,11 @@ claude:
   model: opus
   permission_mode: bypassPermissions   # unattended; see README "Trust posture"
   stall_timeout_ms: 900000             # long test suites emit no events
+codex:
+  command: codex
+  model: gpt-6.1-sol                  # tickets can choose another model
+  sandbox: workspace-write           # grant external board/remote access explicitly; see README
+  stall_timeout_ms: 900000
 ---
 
 You are working unattended on ticket {{ issue.identifier }}: {{ issue.title }}

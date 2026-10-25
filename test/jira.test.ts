@@ -59,6 +59,26 @@ test('ADF → text', () => {
   assert.equal(adfToText(null), null);
 });
 
+test('Jira agent selection uses reserved labels and preserves unrelated labels on update', async () => {
+  const { tracker, bodies, close } = await fakeJira([
+    { fields: { labels: ['agent', 'keep', 'symphony:agent:claude', 'symphony:model:opus'] } },
+    {},
+  ]);
+  try {
+    const ticket = tracker.normalize(raw(1, { labels: ['agent', 'symphony:agent:codex', 'symphony:model:gpt-6-astra'] }))!;
+    assert.equal(ticket.agent_provider, 'codex');
+    assert.equal(ticket.agent_model, 'gpt-6-astra');
+    assert.equal(tracker.normalize(raw(1, { labels: ['symphony:agent:codex', 'symphony:agent:claude'] })), null);
+    assert.equal(tracker.normalize(raw(1, { labels: ['symphony:agent:bad'] })), null);
+    await tracker.setAgent('ABC-1', { provider: 'codex', model: 'gpt-6-astra' });
+    assert.equal(bodies[0].url, '/rest/api/3/issue/ABC-1?fields=labels');
+    assert.deepEqual(bodies[1].body, { update: { labels: [
+      { remove: 'symphony:agent:claude' }, { remove: 'symphony:model:opus' },
+      { add: 'symphony:agent:codex' }, { add: 'symphony:model:gpt-6-astra' },
+    ] } });
+  } finally { close(); }
+});
+
 test('normalization: labels, priority, timestamps, blockers drive dispatchable', async () => {
   const { tracker, close } = await fakeJira([]);
   close();

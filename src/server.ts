@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { errMsg, log, norm } from './core.ts';
+import { errMsg, log, norm, parseAgentSelection } from './core.ts';
 import type { Orchestrator } from './orchestrator.ts';
 
 // Read per request so UI edits don't need a restart (a ~40 KB local file).
@@ -60,6 +60,14 @@ function columnState(orch: Orchestrator, v: unknown): string {
   return match;
 }
 
+function ticketAgent(body: Record<string, unknown>) {
+  try {
+    return parseAgentSelection(body.agent_provider, body.agent_model);
+  } catch (e) {
+    throw new HttpError(400, 'invalid_field', errMsg(e));
+  }
+}
+
 /** SPEC 13.7 HTTP extension (dashboard at `/`, JSON under `/api/v1/*`) plus the board's ticket endpoints. */
 export function startServer(orch: Orchestrator, port: number): Promise<Server> {
   const server = createServer(async (req, res) => {
@@ -94,6 +102,7 @@ export function startServer(orch: Orchestrator, port: number): Promise<Server> {
         if (!tracker.create) throw new HttpError(501, 'not_supported', `the ${orch.cfg.tracker.kind} tracker does not support creating tickets here`);
         const b = await readJson(req);
         const priority = b.priority == null || b.priority === '' ? null : Number(b.priority);
+        const selection = ticketAgent(b);
         if (priority !== null && !(Number.isInteger(priority) && priority >= 1 && priority <= 4)) throw new HttpError(400, 'invalid_field', 'priority must be 1-4');
         const identifier = await tracker.create({
           title: text(b.title, 'title', 200, true),
@@ -101,25 +110,32 @@ export function startServer(orch: Orchestrator, port: number): Promise<Server> {
           state: b.state === undefined ? orch.cfg.boardColumns[0] : columnState(orch, b.state),
           labels: b.agent ? orch.cfg.tracker.requiredLabels.map(norm).filter(Boolean) : [],
           priority,
+          agent_provider: selection.provider,
+          agent_model: selection.model,
         });
         log('info', 'ticket created from board', { issue: identifier });
         orch.requestRefresh();
         return send(201, { identifier });
       }
 
-      const m = /^\/api\/v1\/tickets\/([^/]+)\/(state|comments)$/.exec(path);
+      const m = /^\/api\/v1\/tickets\/([^/]+)\/(state|comments|agent)$/.exec(path);
       if (m) {
         allow('POST');
         const identifier = decodeURIComponent(m[1]);
         const b = await readJson(req);
-        if (!tracker.transition || !tracker.comment) throw new HttpError(501, 'not_supported', 'tracker has no write tools');
         try {
-          if (m[2] === 'state') await tracker.transition(identifier, columnState(orch, b.state));
-          else await tracker.comment(identifier, text(b.text, 'text', 20_000, true));
+          if (m[2] === 'agent') {
+            if (!tracker.setAgent) throw new HttpError(501, 'not_supported', 'tracker does not support agent selection');
+            await tracker.setAgent(identifier, ticketAgent(b));
+          } else {
+            if (!tracker.transition || !tracker.comment) throw new HttpError(501, 'not_supported', 'tracker has no write tools');
+            if (m[2] === 'state') await tracker.transition(identifier, columnState(orch, b.state));
+            else await tracker.comment(identifier, text(b.text, 'text', 20_000, true));
+          }
         } catch (e) {
           throw e instanceof HttpError ? e : new HttpError(400, 'tracker_rejected', errMsg(e));
         }
-        log('info', m[2] === 'state' ? 'ticket moved from board' : 'comment added from board', { issue: identifier, state: b.state });
+        log('info', 'ticket updated from board', { issue: identifier, operation: m[2], state: b.state });
         orch.requestRefresh(); // reconcile promptly, e.g. stop an agent whose ticket was dragged out of an active column
         return send(200, { ok: true });
       }

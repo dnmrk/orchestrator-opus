@@ -1,13 +1,12 @@
-# Symphony (Claude Code)
+# Symphony (Claude Code + Codex)
 
 An implementation of [openai/symphony `SPEC.md`](https://github.com/openai/symphony/blob/main/SPEC.md):
-a daemon that polls a ticket board (local markdown files, or Jira), gives every eligible ticket its own workspace, and runs Claude Code
+a daemon that polls a ticket board (local markdown files, or Jira), gives every eligible ticket its own workspace, and runs Claude Code or Codex
 headless in it until the ticket leaves an active state (e.g. moves to `Human Review`).
 
-Differences from the spec: the coding agent is Claude Code (`claude -p --output-format stream-json`)
-instead of Codex app-server, so the front-matter key is `claude` instead of `codex`. A spec "turn" is
-one `claude -p` invocation; continuation turns use `--resume <session>` on the same session. SSH
-workers (Appendix A) are not implemented.
+Differences from the spec: agents run through CLI processes instead of Codex app-server. A turn is
+one `claude -p --output-format stream-json` or `codex exec --json` invocation. Continuations resume
+the same Claude session or the thread ID returned by Codex. SSH workers (Appendix A) are not implemented.
 
 ![Board with a running agent, a retry, and tickets waiting for review](docs/screenshots/board.jpg)
 
@@ -16,8 +15,8 @@ workers (Appendix A) are not implemented.
 **Orchestration (SPEC core)**
 - Polls the tracker, dispatches eligible tickets by priority and age, and respects `blocked_by`,
   `required_labels`, and global and per-state concurrency limits.
-- Runs multi-turn Claude Code sessions. Turn 1 renders the Liquid prompt, and later turns `--resume`
-  the same session with a continuation prompt.
+- Runs multi-turn Claude Code or Codex sessions. Turn 1 renders the Liquid prompt; later turns resume
+  the same session with a continuation prompt. Choose the provider and model per ticket before Todo.
 - Reconciles every tick. A ticket that leaves an active state stops its agent, and a silent agent
   is killed after `stall_timeout_ms`.
 - Retries failures with exponential backoff, and continues 1 s after a clean exit if the ticket is
@@ -43,12 +42,12 @@ workers (Appendix A) are not implemented.
 **Dashboard** (local-only, no build)
 - A Linear-style board with drag-and-drop moves, configurable and hidden columns, a filter,
   `c` for a new issue, and system, light, and dark themes.
-- An issue view showing the description, live agent activity, comments, and properties.
+- An issue view showing the description, live agent activity, comments, properties, and agent/model selection.
 - An Activity tab with running agents, the retry queue, recent runs, tokens, cost, and agent time.
 - A JSON API (SPEC 13.7). Writes are protected against cross-site requests and DNS rebinding.
 
 **Footprint**: Node 24 runs the TypeScript directly with no build step. The only runtime
-dependencies are `yaml` and `liquidjs`, and the test suite fakes `claude` (`test/fixtures/fake-claude.mjs`).
+dependencies are `yaml` and `liquidjs`. Tests fake both CLIs (`test/fixtures/fake-{claude,codex}.mjs`).
 
 ## Run
 
@@ -72,8 +71,10 @@ The agent clones your local repo, works on `agent/DEV-1`, pushes the branch back
 ticket file, and sets `state: Human Review`. To send it back, set `state: Rework`; to clean its
 workspace, set `state: Done`. For Jira, start from `WORKFLOW.jira.example.md`.
 
-Needs Node ≥ 24 (TypeScript runs via native type stripping, no build), plus `claude`, `git`, and
-`gh` on `PATH`. Logs are JSON lines on stdout; `SYMPHONY_LOG_LEVEL=debug` adds every agent event.
+Needs Node ≥ 24 (TypeScript runs via native type stripping, no build), the selected agent CLI (`claude`
+or `codex`) installed and authenticated, and the Git tools your workflow uses. Authenticate each CLI
+as the user running Symphony; Codex reuses its saved CLI login. Logs are JSON lines on stdout;
+`SYMPHONY_LOG_LEVEL=debug` adds every agent event.
 `WORKFLOW.md` is re-read on change. An invalid edit pauses dispatch and keeps the last good config.
 
 ## Dashboard
@@ -110,7 +111,42 @@ can't create work for an unattended agent. It binds to 127.0.0.1 only and reject
 `GET /api/v1/state`, `GET /api/v1/<ticket>`, `POST /api/v1/refresh` (poll now). Changing the port
 needs a restart.
 
-Development (inside the container): `docker compose up -d && docker compose exec app npm test` / `npm run typecheck`.
+Development: follow `AGENTS.md` for a separate worktree and container; run tests and typecheck there.
+
+## Choose an agent before Todo
+
+Create a ticket in Backlog (or another configured inactive state), choose **Coding agent** and an
+optional **Model**, then create it. On an existing ticket, open **Agent**, choose Claude or Codex,
+enter or pick a model, and click **Save agent** before changing its status to Todo. Status changes
+are disabled while that form has unsaved edits. Clearing Model uses that provider's configured default.
+The **Default** provider option follows `agent.provider`.
+
+Existing workflows and tickets keep using Claude unless you change the workflow default:
+
+```yaml
+agent:
+  provider: claude
+claude:
+  model: opus
+codex:
+  command: codex
+  model: gpt-6.1-sol
+  sandbox: workspace-write
+```
+
+The provider, model, and agent timeouts are fixed for each running attempt. Changing a ticket or
+reloading the workflow affects the next attempt; continuation turns keep the existing session.
+There is no automatic fallback to the other provider. Model suggestions do not verify account access.
+Both providers share concurrency limits, workspaces, tracker tools, and handoff checks.
+
+Local tickets store `agent_provider: codex` and optional `agent_model: gpt-6-astra` in the YAML header.
+Jira tickets use reserved labels `symphony:agent:codex` and optional `symphony:model:gpt-6-astra`;
+the dashboard updates those labels while preserving unrelated labels. Use one provider label and
+at most one model label; invalid or conflicting selections are rejected when reading tickets.
+
+The Activity tab and API show the actual provider/model for running and recent attempts. Codex
+reports token usage without a billed USD total, so total spend becomes **Unknown** (`cost_usd: null`)
+after a Codex turn, rather than showing an incomplete total as zero.
 
 ## Front matter (beyond the spec's core keys)
 
@@ -119,6 +155,7 @@ Development (inside the container): `docker compose up -d && docker compose exec
 | `board.columns` / `board.hidden_columns` / `board.title` | active states, `Human Review`, blocked, terminal / `[]` / board dir name | Linear-style board: visible columns, the collapsible "Hidden columns" list (counts, drop targets, click to show), and the header title |
 | `workspace.shared` | — | run every ticket in this existing directory (e.g. a Docker-mounted project checkout) instead of per-ticket workspaces; never created or deleted, forces `max_concurrent_agents` to 1 (deviation from SPEC 9) |
 | `agent.blocked_state` | `Blocked` | ticket that used all `max_turns` while still active gets a comment and moves here instead of being re-dispatched (deviation from SPEC 7.1); if that move fails it is skipped until its state changes |
+| `agent.provider` | `claude` | default provider when a ticket has no explicit choice; `claude` or `codex` |
 | `checks.commands` | `[]` | run in order in the workspace (via `bash -lc`) when an agent moves a ticket to `checks.handoff_state`; none = no gate. The first failure moves the ticket back with the output and resumes the agent (counts toward `max_turns`) |
 | `checks.handoff_state` | `Human Review` | the gated state; must not be an active or terminal state. Only agent moves are gated, not a human dragging a card |
 | `checks.timeout_ms` | `600000` | per command; stall detection is paused while checks run |
@@ -128,6 +165,11 @@ Development (inside the container): `docker compose up -d && docker compose exec
 | `claude.allowed_tools` | `[]` | passed as `--allowedTools` |
 | `claude.turn_timeout_ms` | `3600000` | |
 | `claude.stall_timeout_ms` | `300000` | `<= 0` disables; no events during a long Bash call count as a stall |
+| `codex.command` | `codex` | CLI command or wrapper, launched via `bash -lc` |
+| `codex.model` | `gpt-6.1-sol` | default model; tickets can override it |
+| `codex.sandbox` | `workspace-write` | `read-only`, `workspace-write`, or `danger-full-access`; approval policy is always `never` for unattended runs |
+| `codex.turn_timeout_ms` | `3600000` | |
+| `codex.stall_timeout_ms` | `300000` | `<= 0` disables |
 
 Hooks and the agent get `SYMPHONY_ISSUE_IDENTIFIER` and `SYMPHONY_WORKSPACE`. The agent also gets
 `SYMPHONY_ISSUE_ID`, `SYMPHONY_WORKFLOW`, and `SYMPHONY_TRACKER`.
@@ -140,7 +182,8 @@ Hooks and the agent get `SYMPHONY_ISSUE_IDENTIFIER` and `SYMPHONY_WORKSPACE`. Th
 - **scope:** every `*.md` in `dir` except `README.md`. Filename without `.md` = `id` = `identifier`
   (must match `[A-Za-z0-9._-]+`). `native_ref` = `{path}`; `url` = `file://` URL.
 - **header fields:** `state` (required), `title` (or the first `# heading`), `priority` (int),
-  `labels`, `blocked_by` (ticket ids), `assignee`, `branch`, `created` (else file birth time).
+  `labels`, `blocked_by` (ticket ids), `assignee`, `branch`, `created` (else file birth time),
+  `agent_provider` (optional `claude`/`codex`), and `agent_model` (optional; requires an explicit provider).
   The body (including `## Comments`) is the description.
 - **dispatchable:** every `blocked_by` ticket exists and is in a terminal state.
 - **malformed:** missing state/title or bad YAML → skipped with a warning when listing; fails ID refresh.
@@ -174,10 +217,17 @@ Hooks and the agent get `SYMPHONY_ISSUE_IDENTIFIER` and `SYMPHONY_WORKSPACE`. Th
 
 ## Trust posture
 
-This targets **trusted environments**, like upstream. Agents default to `bypassPermissions`, because
-an unattended run can't answer permission prompts. They can run anything your user can, with your
-`claude` login, git and `gh` credentials, and Docker socket. The only isolation is the per-ticket
-directory under `workspace.root`.
+This targets **trusted environments**, like upstream. Claude defaults to `bypassPermissions`, because
+an unattended run can't answer permission prompts. Claude can run anything your user can, with your
+CLI login, git and `gh` credentials, and Docker socket. Its per-ticket directory is not a security boundary.
+
+Codex defaults to `workspace-write` with `approval_policy="never"`. This permits workspace edits but
+does not automatically grant writes to an external local board or Git remote, network access, or
+Docker access. Configure a wrapper in `codex.command` with the required Codex settings and write roots,
+or explicitly select `codex.sandbox: danger-full-access` only in a trusted, isolated runner where broader
+access is intended. Before using a real board, verify the selected CLI can run the project's commands,
+push its branch, and call `$SYMPHONY_TRACKER` from that runner. A Codex workspace must be a Git repository
+unless its command wrapper explicitly opts out of the Git check.
 
 Shortcut (Jira only): the agent inherits the host environment, `JIRA_API_TOKEN` included, because the
 `$SYMPHONY_TRACKER` tool runs as the agent's child. To keep the token away from the agent, move the

@@ -2,7 +2,7 @@
   "name": "symphony",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude Code + Jira implementation of the openai/symphony SPEC.md",
+  "description": "Claude Code and Codex ticket orchestration for local boards and Jira",
   "type": "module",
   "bin": {
     "symphony": "src/cli.ts"

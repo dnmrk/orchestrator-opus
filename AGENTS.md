@@ -4,9 +4,9 @@ Instructions for coding agents (Codex, Claude Code, and others) working on this 
 
 ## Project
 
-Symphony is a TypeScript daemon that runs Claude Code against a ticket board (local markdown or Jira). It runs on Node 24 via native
-type stripping, so there's no build step. Runtime deps are `yaml` and `liquidjs` only. Tests use `node --test` with a fake `claude`
-(`test/fixtures/fake-claude.mjs`). See README.md for features and config.
+Symphony is a TypeScript daemon that runs Claude Code or Codex against a ticket board (local markdown or Jira), with provider/model
+selection per ticket. It runs on Node 24 via native type stripping, so there's no build step. Runtime deps are `yaml` and `liquidjs`
+only. Tests use `node --test` with fake CLIs (`test/fixtures/fake-{claude,codex}.mjs`). See README.md for features and config.
 
 - Every node/npm/tsc command runs **inside a container**, never on the host.
 - Plans and review notes go in `tasks/todo.md`.

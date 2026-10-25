@@ -1,5 +1,25 @@
 # Symphony (Claude Code + Jira port of openai/symphony SPEC.md)
 
+## Claude + Codex tickets — feat/claude-codex-tickets
+
+- [x] Add workflow provider defaults and Codex command/model/sandbox/timeouts; preserve legacy Claude workflows.
+- [x] Persist ticket provider/model choices and expose validated board create/edit APIs; select before Todo.
+- [x] Add Codex JSON turn parsing and explicit thread resume, retaining shared process cleanup and handoff checks.
+- [x] Snapshot provider/model per attempt; expose provider/model and honest cost reporting in activity.
+- [x] Add accessible provider/model controls to ticket creation and Properties, plus card labels.
+- [x] Test config, ticket persistence, API validation, both runners, continuation, errors, cancellation, and handoff checks.
+- [x] Update README, metadata, and example workflows; run full tests/typecheck in this worktree's container and inspect UI.
+
+Scope: src/{core,workflow,agent,local,jira,orchestrator,server,dashboard.html}, tests/fixtures, README, example workflows, package description.
+No dependencies, automatic fallback, push, merge, or live-board changes. Existing tickets default to Claude unless the workflow changes its default.
+Codex defaults to workspace-write with approvals disabled; broader access must be explicitly configured for external tracker files/remotes/Docker.
+
+Review: provider/model selectors in create and ticket Properties; status is disabled while selection is unsaved. Local headers use existing locked atomic writes; Jira uses reserved labels with incremental add/remove operations. Provider/model and stall timeout are pinned per attempt; both runners share cancellation/orphan protection and the existing handoff gate. Codex token totals include cache once; cost_usd becomes null after Codex runs.
+
+Verification: container tests 60/60; typecheck clean; browser create/edit/save/reset, Codex dispatch, switch back to Claude, and activity totals checked on a disposable board. Real installed Codex gpt-6.1-sol and Claude opus each completed a tiny first turn and explicit resume with remembered context in a scratch directory. No tools or project edits in those live CLI checks. No dependencies added.
+
+Not checked: real Jira Cloud writes or a full authenticated ticket workflow with external board/remote/Docker access. Codex sandbox access must be configured for the deployment. No push, merge, or live-board edits.
+
 Decisions (my calls — user skipped questions):
 - TypeScript on Node 24, run directly via native type stripping (no build step). Deps: `yaml`, `liquidjs`.
 - Tracker adapter: Jira Cloud (REST v3, `/search/jql`). Agent: Claude Code headless (`claude -p --output-format stream-json`),

@@ -16,6 +16,25 @@ test('parses front matter, applies defaults and jira state defaults', () => {
   assert.equal(cfg.pollIntervalMs, 30_000);
   assert.equal(cfg.agent.maxTurns, 20);
   assert.equal(cfg.claude.command, 'claude');
+  assert.equal(cfg.agent.provider, 'claude');
+  assert.equal(cfg.codex.command, 'codex');
+  assert.equal(cfg.codex.model, 'gpt-6.1-sol');
+  assert.equal(cfg.codex.sandbox, 'workspace-write');
+});
+
+test('provider and Codex settings validate without changing Claude options', () => {
+  const config = (extra: string) => buildConfig(loadWorkflow(writeWorkflow(tmp(), `tracker: { kind: local }\n${extra}`)));
+  const cfg = config('agent: { provider: codex }\ncodex: { model: gpt-6-astra, sandbox: danger-full-access, turn_timeout_ms: 10000, stall_timeout_ms: 0 }\nclaude: { model: opus }');
+  assert.equal(cfg.agent.provider, 'codex');
+  assert.equal(cfg.codex.model, 'gpt-6-astra');
+  assert.equal(cfg.codex.sandbox, 'danger-full-access');
+  assert.equal(cfg.codex.turnTimeoutMs, 10000);
+  assert.equal(cfg.codex.stallTimeoutMs, 0);
+  assert.equal(cfg.claude.model, 'opus');
+  assert.equal(config('claude: { model: "" }').claude.model, null);
+  for (const extra of ['agent: { provider: nope }', 'agent: { provider: false }', 'codex: { sandbox: nope }', 'codex: { model: 42 }', 'codex: { turn_timeout_ms: 1 }']) {
+    assert.throws(() => config(extra), /invalid_config/);
+  }
 });
 
 test('expands ~ and $VAR in workspace.root, normalizes by-state limits', () => {

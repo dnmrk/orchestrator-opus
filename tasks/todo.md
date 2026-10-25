@@ -142,3 +142,8 @@ Three review bugs fixed, each with a red test first (45 -> 48 tests, all pass; t
 - an abort during checks was reported as a check failure (red: bogus "Check failed" comment + transition on `orch.stop()`). Aborted runs now rethrow.
 - handoff_state validation ran with no `checks.commands` (red: `Human Review` in terminal_states failed to load). Now only validated when commands are set.
 Also: the failure-path refetch keeps `e.issue` if the issue vanished.
+Live smoke (2026-10-25, host Symphony from the worktree, sandbox board + throwaway repo, `claude --model haiku`): DEV-1 →
+check 1 failed ("must contain exactly one line: Hello, Symphony!") → failure comment → turn 2 resumed the SAME session
+(1 dispatch, 1 session id) → agent fixed + committed → both checks passed → comment `checks passed at a54c634…`, which matches
+the workspace HEAD with a clean tree → ticket stayed in Human Review. 2 turns, 19 s. Merged to main (ff), 48/48 + typecheck in `app`.
+Note: the live service (pid 55224) still runs the pre-merge code until it's restarted, and ~/symphony-board has no `checks:` block yet.

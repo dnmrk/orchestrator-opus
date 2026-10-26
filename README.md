@@ -49,85 +49,41 @@ the same Claude session or the thread ID returned by Codex. SSH workers (Appendi
 **Footprint**: Node 24 runs the TypeScript directly with no build step. The only runtime
 dependencies are `yaml` and `liquidjs`. Tests fake both CLIs (`test/fixtures/fake-{claude,codex}.mjs`).
 
-## Initialize any project
+## Set up Symphony
 
-Install this checkout once (Node 24+, Git and Bash; macOS/Linux):
+Follow the [setup guide](docs/SETUP.md) for prerequisites, agent installation and sign-in,
+project configuration, your first ticket, reviewing changes, and troubleshooting.
+
+With Node 24+, Git, Bash and your selected agent CLI installed, install Symphony from this
+checkout once:
 
 ```bash
-npm install --global /absolute/path/to/symphony
+cd ~/Sites/symphony
+npm ci --omit=dev
+npm install --global .
+```
+
+Then initialize the project you want agents to work on:
+
+```bash
 cd ~/Sites/project1
 symphony-linear init .
 ```
 
-These are **end-user host commands**. Repository development commands still run in the isolated
-container described in AGENTS.md. Nothing is published to npm; install from the local checkout
-or a package produced with `npm pack`. The packaged launcher strips this package's TypeScript,
-so global installation works without a build step.
-
-`init` requires the Git project root with at least one commit. It creates a local markdown board,
-adds `/.symphony-linear/` to the root `.gitignore`, starts a background instance, and prints its
-localhost dashboard URL. Each project has its own instance and an OS-assigned free port.
-The port can change after restarting. Repeating `init` preserves configuration and tickets and
-returns the running instance's URL. It does not open a browser or start at login.
+Open the localhost URL printed by the command. Initialization creates ignored state under
+`.symphony-linear/` and starts a background instance on an available port. Each project has
+its own tickets, configuration and ticket worktrees. Claude is the default; tickets can select
+Codex, a model and a base branch.
 
 ```bash
 symphony-linear status .
 symphony-linear stop .
 symphony-linear start .
-# Choose the project's initial default base branch (required on detached HEAD):
-symphony-linear init . --base-branch main
 ```
 
-All project state lives here; the application itself remains in its installation directory:
-
-```text
-.symphony-linear/
-  WORKFLOW.md       # editable workflow, project base branch, provider defaults
-  tickets/          # local board
-  worktrees/        # isolated ticket checkouts
-  worktree-state/   # original base commit and ticket branch; retained for rework
-  logs/daemon.log   # append-only daemon output
-  runtime.json     # current instance address and private control token
-```
-
-Git keeps its own worktree administration in the repository's Git directory. Initialization also
-uses a temporary lock there; daemon and lifecycle locks live in `.symphony-linear/`.
-The ignore rule prevents ordinary staging, not `git add -f`. Initialization refuses already
-tracked state and does not untrack it automatically. Commit the `.gitignore` change if you want
-other checkouts to inherit it. Back up local tickets separately; Git does not back them up.
-
-Create tickets in **Backlog**, choose their coding agent and **Base branch**, then move them to
-**To Do** when ready. Claude is the default; tickets can select Codex and a model. Both CLIs must
-be installed and authenticated as the user running Symphony. Only tickets with the agent label
-are dispatched. One agent runs per project by default; different projects run independently.
-
-The base selector lists local and already fetched remote-tracking branches. It does not fetch.
-`workspace.base_branch` supplies the default, initially the branch checked out during `init`.
-The selected branch is resolved when the ticket first starts; uncommitted project changes are
-not copied. Each ticket gets a `symphony/DEV-N` branch. The base choice locks at creation, and
-retries/rework reuse that ticket's branch and checkout without resetting or rebasing it.
-Missing bases and existing unrelated ticket branches fail explicitly. After cleanup, a deleted
-ticket branch must be restored before rework can resume.
-
-Agents commit locally and hand off to **Human Review**; there is no automatic push or merge.
-Review or merge the ticket branch yourself. Terminal-state cleanup uses `git worktree remove`
-without force, preserving dirty/untracked work and keeping the branch. Configure project-specific
-setup in `hooks.after_create` and checks in `checks.commands`; initialization does not install
-project dependencies or infer test commands. Git worktrees share Git metadata and are not
-security sandboxes.
-
-For project worktrees, Codex receives additional writable roots for the ticket directory and
-shared Git metadata using its [workspace-write settings](https://learn.chatgpt.com/docs/config-file/config-reference).
-It retains the configured sandbox and approval policy. This permits shared ticket/Git writes;
-it does not enable network or Docker access. Organization policies may further restrict these
-permissions. Existing standalone workflows retain their previous sandbox behavior.
-
-`stop` authenticates the instance before requesting graceful shutdown; it never kills a PID
-from a stale file. If a recorded PID is alive but the instance is unresponsive, inspect the log
-and that process before removing stale runtime metadata. Stopping keeps all tickets and worktrees.
-
-The original `symphony path/to/WORKFLOW.md --port N` foreground interface remains available,
-including local and Jira workflows. “Linear” here names the local board, not a Linear integration.
+These are end-user host commands. Contributors must follow [AGENTS.md](AGENTS.md) and run
+Node/npm development commands in their isolated container. The original foreground interface
+below remains available for standalone local boards and Jira.
 
 ## Run
 
@@ -159,7 +115,8 @@ as the user running Symphony; Codex reuses its saved CLI login. Logs are JSON li
 
 ## Dashboard
 
-Set `server.port` in WORKFLOW.md (the local example uses `4555`) or pass `--port 4555`, then open
+For `symphony-linear init`, use the URL printed by `init` or `status`. For a standalone
+foreground workflow, set `server.port` in WORKFLOW.md (the local example uses `4555`) or pass `--port 4555`, then open
 <http://127.0.0.1:4555/>.
 
 - **Board**: one column per state in `board.columns`. The default is the active states,

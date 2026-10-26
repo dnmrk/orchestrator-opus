@@ -261,3 +261,15 @@ Passed:
 No code changes were needed. This supersedes the earlier untested-browser limitation. Real
 provider authentication/inference and platform-specific sandbox enforcement remain untested.
 Stopped the disposable service and removed its test container after verification.
+
+
+## Setup documentation
+
+- [x] Add docs/SETUP.md: prerequisites, agent install/authentication, local checkout or tarball install, project initialization, setup/check hooks, first ticket, branch review/rework, lifecycle, multiple projects and troubleshooting.
+- [x] Replace README setup duplication with a quickstart and link to the guide; distinguish dynamic project ports from standalone fixed ports.
+- [x] Include the guide in npm package files so README links work after installation.
+- [x] Check Markdown links, package file inclusion and diff whitespace against current CLI behavior.
+
+Scope: README.md, docs/SETUP.md, package.json and this task log. Documentation only; no runtime behavior changes.
+
+Validation: relative Markdown files/anchors and code fences checked with Python; package files include the guide and AGENTS.md; git diff --check clean. Agent installation/sign-in instructions checked against official provider documentation. No runtime tests rerun for this documentation-only change.

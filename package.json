@@ -28,6 +28,8 @@
     "src",
     "bin",
     "README.md",
+    "AGENTS.md",
+    "docs/SETUP.md",
     "WORKFLOW.example.md",
     "WORKFLOW.jira.example.md"
   ]

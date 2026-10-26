@@ -1,10 +1,12 @@
+import { branches, git } from './git.ts';
+import { worktreeStarted } from './worktree.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, unwatchFile, watchFile } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runTurn, type AgentEvent } from './agent.ts';
 import { errMsg, lockFile, log, norm, type AgentProvider, type Issue, type Tracker, type TrackerTools } from './core.ts';
-import { buildConfig, loadWorkflow, renderPrompt, workflowMtime, type Config, type Workflow } from './workflow.ts';
+import { buildConfig, expandPath, loadWorkflow, renderPrompt, workflowMtime, type Config, type Workflow } from './workflow.ts';
 import { ensureWorkspace, hookEnv, removeWorkspace, runHook } from './workspace.ts';
 
 type Stop = { reason: string; release: boolean; cleanup: boolean };
@@ -128,7 +130,7 @@ export class Orchestrator {
     if (this.configError || !this.cfg) throw new Error(`startup validation failed: ${this.configError}`);
     // Running/claimed state is in memory, so a second service on the same workspace would dispatch the same tickets.
     const target = this.cfg.workspaceShared ?? this.cfg.workspaceRoot;
-    const lock = join(tmpdir(), `symphony-${createHash('sha256').update(target).digest('hex').slice(0, 16)}.lock`);
+    const lock = this.cfg.projectRoot ? join(this.cfg.workflowDir, 'daemon.lock') : join(tmpdir(), `symphony-${createHash('sha256').update(target).digest('hex').slice(0, 16)}.lock`);
     this.unlock = await lockFile(lock).catch((e) => {
       throw new Error(`another symphony service is already using ${target} (${errMsg(e)})`);
     });
@@ -267,8 +269,12 @@ export class Orchestrator {
   /** SPEC 16.5 worker attempt. Uses the config snapshot from dispatch time. Resolves true if max_turns ran out while the issue was still active. */
   async runWorker(e: Running, cfg: Config): Promise<boolean> {
     const template = this.workflow.promptTemplate;
-    const ws = await ensureWorkspace(cfg, e.identifier);
+    const ws = await ensureWorkspace(cfg, e.identifier, async () => (await this.tracker.fetchIssuesByIds([e.issue.id]))[0]?.base_branch ?? null);
     e.workspace = ws.path;
+    const writableRoots = cfg.projectRoot && e.provider === 'codex' ? [
+      expandPath(cfg.tracker.provider.dir ?? 'tickets', cfg.workflowDir),
+      await git(ws.path, 'rev-parse', '--path-format=absolute', '--git-common-dir'),
+    ] : undefined;
     const env = hookEnv(e.identifier, ws.path);
     if (cfg.hooks.beforeRun) await runHook('before_run', cfg.hooks.beforeRun, ws.path, cfg.hooks.timeoutMs, env, e.abort.signal);
     try {
@@ -281,6 +287,7 @@ export class Orchestrator {
         e.turns = turn;
         const options = {
           cwd: ws.path,
+          writableRoots,
           sessionId: e.sessionId,
           resume: turn > 1,
           prompt,
@@ -574,11 +581,13 @@ export class Orchestrator {
       required_labels: this.cfg.tracker.requiredLabels,
       can_create: Boolean(this.tracker.create),
       can_set_agent: Boolean(this.tracker.setAgent),
+      branches: this.cfg.projectRoot ? await branches(this.cfg.projectRoot) : null,
+      default_base_branch: this.cfg.baseBranch,
       default_provider: this.cfg.agent.provider,
       default_models: { claude: this.cfg.claude.model, codex: this.cfg.codex.model },
       tickets: tickets.map((i) => {
         const provider = i.agent_provider ?? this.cfg.agent.provider;
-        return { ...i, effective_provider: provider, effective_model: i.agent_model ?? this.cfg[provider].model, agent: this.agentStatus(i.id) };
+        return { ...i, base_locked: this.cfg.projectRoot ? worktreeStarted(this.cfg, i.identifier) || this.running.has(i.id) : false, effective_provider: provider, effective_model: i.agent_model ?? this.cfg[provider].model, agent: this.agentStatus(i.id) };
       }),
     };
   }

@@ -1,3 +1,4 @@
+import { Script } from 'node:vm';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -138,4 +139,10 @@ test('hidden columns are listed, fetched, and valid move targets; title defaults
     server.close();
     await orch.stop();
   }
+});
+
+test('dashboard script parses with the project branch controls', () => {
+  const html = readFileSync(new URL('../src/dashboard.html', import.meta.url), 'utf8');
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)![1];
+  assert.doesNotThrow(() => new Script(script));
 });

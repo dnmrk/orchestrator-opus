@@ -270,6 +270,7 @@
       <label class="check" id="create-agent-row"><input type="checkbox" name="agent" checked> Agent can pick this up</label>
     </div>
     <div class="agent-fields">
+      <label id="create-base-row" hidden>Base branch <span class="select"><select name="base_branch" id="create-base" aria-label="Base branch"></select></span></label>
       <label>Coding agent <span class="select"><select name="agent_provider" id="create-provider" aria-label="Coding agent"><option value="claude">Claude</option><option value="codex">Codex</option></select></span></label>
       <label>Model <input class="agent-model" name="agent_model" id="create-model" aria-label="Model" list="create-models" maxlength="200" autocomplete="off"></label>
       <datalist id="create-models"></datalist>
@@ -522,7 +523,7 @@ let panelKey = '';
 function renderPanel(keepDraft = false, force = false) {
   const t = board?.tickets.find((x) => x.identifier === selected);
   if (!t) return closePanel();
-  if (keepDraft && !force && $('p-agent-form')?.dataset.dirty === 'true') return;
+  if (keepDraft && !force && ($('p-agent-form')?.dataset.dirty === 'true' || $('p-base')?.dataset.saving === 'true')) return;
   // Polling re-renders only on change, so an open dropdown or a half-typed comment isn't disturbed.
   const key = JSON.stringify([t, detail?.recent_events, detail?.workspace]);
   if (keepDraft && !force && key === panelKey) return;
@@ -562,6 +563,7 @@ function renderPanel(keepDraft = false, force = false) {
         <p class="side-title">Properties</p>
         <dl class="attrs">
           <dt>Status</dt><dd><span class="select">${statusIcon(t.state)}<select id="p-state" aria-label="Status">${allStates().map((c) => `<option${norm(c) === norm(t.state) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></span></dd>
+          ${board.branches ? `<dt>Base branch</dt><dd><select id="p-base" aria-label="Base branch" ${t.base_locked ? 'disabled' : ''}>${[...new Set([t.base_branch ?? board.default_base_branch, ...board.branches])].map((b) => `<option value="${esc(b)}"${b === (t.base_branch ?? board.default_base_branch) ? ' selected' : ''}>${esc(b)}</option>`).join('')}</select>${t.base_locked ? '<span class="muted">Fixed for this ticket</span>' : ''}</dd>` : ''}
           <dt>Priority</dt><dd>${prioIcon(t.priority)}${esc(PRIORITY[t.priority] ?? 'No priority')}</dd>
           <dt>Labels</dt><dd>${t.labels.length ? t.labels.map((l) => `<span class="chip"><span class="dot"></span>${esc(l)}</span>`).join('') : '<span class="muted">None</span>'}</dd>
           ${t.blocked_by.length ? `<dt>Blocked by</dt><dd>${t.blocked_by.map((b) => `${esc(b.identifier)} (${esc(b.state ?? 'missing')})`).join(', ')}</dd>` : ''}
@@ -594,7 +596,19 @@ function renderPanel(keepDraft = false, force = false) {
     </aside>`;
   $('p-comment').value = draft;
   if (hadFocus) $('p-comment').focus();
-  $('p-state').addEventListener('change', (ev) => move(t.identifier, ev.target.value));
+  $('p-base')?.addEventListener('change', async (ev) => {
+    const select = ev.target;
+    select.disabled = true;
+    select.dataset.saving = 'true';
+    $('p-state').disabled = true;
+    try {
+      await api(`/api/v1/tickets/${encodeURIComponent(t.identifier)}/base-branch`, { base_branch: select.value });
+      toast('Base branch saved');
+      await refresh();
+    } catch (e) { select.value = t.base_branch ?? board.default_base_branch; toast(`Couldn't save branch: ${e.message}`, true); }
+    finally { select.dataset.saving = 'false'; if (select.isConnected) select.disabled = Boolean(t.base_locked); if ($('p-state')) $('p-state').disabled = $('p-agent-form')?.dataset.dirty === 'true'; renderPanel(true); }
+  });
+  $('p-state').addEventListener('change' , (ev) => move(t.identifier, ev.target.value));
   if ($('p-agent-form')) {
     const dirty = () => {
       $('p-agent-form').dataset.dirty = 'true';
@@ -652,6 +666,8 @@ function openCreate(stateName) {
   $('create-project').textContent = board.title;
   $('create-state').innerHTML = allStates().map((c) => `<option${norm(c) === norm(stateName ?? board.columns[0]) ? ' selected' : ''}>${esc(c)}</option>`).join('');
   $('create-agent-row').hidden = !board.required_labels.length;
+  $('create-base-row').hidden = !board.branches;
+  $('create-base').innerHTML = (board.branches ? [...new Set([board.default_base_branch, ...board.branches])] : []).map((b) => `<option value="${esc(b)}"${b === board.default_base_branch ? ' selected' : ''}>${esc(b)}</option>`).join('');
   $('create-provider').value = board.default_provider;
   syncCreateModel();
   syncCreateIcons();
@@ -679,6 +695,7 @@ $('create-form').addEventListener('submit', async (ev) => {
   try {
     const { identifier } = await api('/api/v1/tickets', {
       title: f.get('title'), description: f.get('description'), state: f.get('state'),
+      base_branch: f.get('base_branch') || null,
       priority: f.get('priority') || null, agent: f.get('agent') === 'on',
       agent_provider: f.get('agent_provider'), agent_model: String(f.get('agent_model') ?? '').trim() || null,
     });

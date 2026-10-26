@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { open, readFile, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, rmdir } from 'node:fs/promises';
 
 export type BlockerRef = { id: string | null; identifier: string | null; state: string | null };
 export type AgentProvider = 'claude' | 'codex';
@@ -25,6 +25,7 @@ export type Issue = {
   priority: number | null;
   state: string;
   branch_name: string | null;
+  base_branch?: string | null;
   url: string | null;
   assignee_id: string | null;
   labels: string[];
@@ -47,10 +48,11 @@ export interface TrackerTools {
   transition(identifier: string, state: string): Promise<string>;
   /** Board-only (local tracker): create a ticket, returns its identifier. */
   create?(ticket: NewTicket): Promise<string>;
+  setBaseBranch?(identifier: string, branch: string): Promise<void>;
   setAgent?(identifier: string, selection: AgentSelection): Promise<void>;
 }
 
-export type NewTicket = { title: string; description: string; state: string; labels: string[]; priority: number | null; agent_provider?: AgentProvider | null; agent_model?: string | null };
+export type NewTicket = { base_branch?: string | null; title: string; description: string; state: string; labels: string[]; priority: number | null; agent_provider?: AgentProvider | null; agent_model?: string | null };
 
 export class TrackerError extends Error {
   category: string;
@@ -112,8 +114,19 @@ export async function lockFile(path: string, waitMs = 0): Promise<() => Promise<
     }
     const holder = await readFile(path, 'utf8').catch(() => ''); // '' = just created or just released: wait
     if (holder && !alive(Number(holder))) {
-      // shortcut: two processes reclaiming one stale lock at once can both win; only reachable after a holder crashed.
-      await rm(path, { force: true });
+      const recovery = `${path}.reclaim`;
+      try { await mkdir(recovery); }
+      catch (e: any) {
+        if (e.code !== 'EEXIST') throw e;
+        if (Date.now() >= end) throw new Error(`lock recovery is in progress at ${recovery}; inspect it if a previous recovery was interrupted`);
+        await new Promise((r) => setTimeout(r, 20));
+        continue;
+      }
+      try {
+        // Recheck under the recovery guard: another contender may already hold a new lock.
+        const current = await readFile(path, 'utf8').catch(() => '');
+        if (current && !alive(Number(current))) await rm(path, { force: true });
+      } finally { await rmdir(recovery); }
       continue;
     }
     if (Date.now() >= end) throw new Error(`${path} is held by pid ${holder || '?'}`);

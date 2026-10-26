@@ -1,3 +1,4 @@
+import { ensureWorktree, removeWorktree } from './worktree.ts';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -62,7 +63,8 @@ export function runHook(
   });
 }
 
-export async function ensureWorkspace(cfg: Config, identifier: string): Promise<{ path: string; createdNow: boolean }> {
+export async function ensureWorkspace(cfg: Config, identifier: string, readBase: () => Promise<string | null> = async () => null): Promise<{ path: string; createdNow: boolean }> {
+  if (cfg.projectRoot) return ensureWorktree(cfg, identifier, readBase);
   if (cfg.workspaceShared) return { path: cfg.workspaceShared, createdNow: false };
   const path = workspacePath(cfg.workspaceRoot, identifier);
   await mkdir(cfg.workspaceRoot, { recursive: true });
@@ -86,6 +88,11 @@ export async function ensureWorkspace(cfg: Config, identifier: string): Promise<
 }
 
 export async function removeWorkspace(cfg: Config, identifier: string): Promise<void> {
+  if (cfg.projectRoot) {
+    const path = workspacePath(cfg.workspaceRoot, identifier);
+    if (existsSync(path) && cfg.hooks.beforeRemove) await runHook('before_remove', cfg.hooks.beforeRemove, path, cfg.hooks.timeoutMs, hookEnv(identifier, path));
+    return removeWorktree(cfg, identifier);
+  }
   if (cfg.workspaceShared) return; // never delete the user's own checkout
   const path = workspacePath(cfg.workspaceRoot, identifier);
   if (!existsSync(path)) return;

@@ -78,6 +78,7 @@ export class LocalTracker implements Tracker, TrackerTools {
       priority: Number.isInteger(t.meta.priority) ? t.meta.priority : null,
       state,
       branch_name: str(t.meta.branch),
+      base_branch: str(t.meta.base_branch),
       url: pathToFileURL(t.path).href,
       assignee_id: str(t.meta.assignee),
       labels: [...new Set(list(t.meta.labels).map(norm).filter(Boolean))],
@@ -147,6 +148,7 @@ export class LocalTracker implements Tracker, TrackerTools {
       ...(t.labels.length ? { labels: t.labels } : {}),
       ...(t.priority ? { priority: t.priority } : {}),
       created: new Date().toISOString(),
+      ...(t.base_branch ? { base_branch: t.base_branch } : {}),
       ...(selection.provider ? { agent_provider: selection.provider } : {}),
       ...(selection.model ? { agent_model: selection.model } : {}),
     });
@@ -190,6 +192,13 @@ export class LocalTracker implements Tracker, TrackerTools {
       return this.serialize(t);
     });
     return state;
+  }
+
+  async setBaseBranch(identifier: string, branch: string): Promise<void> {
+    await this.update(identifier, (t) => {
+      t.doc.set('base_branch', branch);
+      return this.serialize(t);
+    });
   }
 
   async setAgent(identifier: string, selection: AgentSelection): Promise<void> {

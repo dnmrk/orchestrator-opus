@@ -167,3 +167,97 @@ check 1 failed ("must contain exactly one line: Hello, Symphony!") → failure c
 (1 dispatch, 1 session id) → agent fixed + committed → both checks passed → comment `checks passed at a54c634…`, which matches
 the workspace HEAD with a clean tree → ticket stayed in Human Review. 2 turns, 19 s. Merged to main (ff), 48/48 + typecheck in `app`.
 Live service restarted on the merged code (2026-10-25 15:28), and ~/symphony-board/WORKFLOW.md now has a `checks:` block.
+
+
+## Plan — project-local symphony-linear initialization
+
+Implementation authorized by the user after confirming provider and per-ticket base-branch choices.
+
+Confirmed requirements:
+- Globally installed Node CLI named `symphony-linear`; existing local markdown board, no Linear integration.
+- `symphony-linear init .` initializes the selected project and starts a background instance.
+- Project-local configuration, tickets, worktrees, logs and runtime metadata live under `.symphony-linear/`.
+- Agents work in isolated per-ticket Git worktrees. Provide start/stop/status commands.
+- Host Node is allowed for end users; development Node/npm/typecheck/test commands remain container-only.
+
+Proposed behavior:
+- Share the installed application code; do not copy the application or node_modules into each project. Git worktree administrative metadata necessarily lives in Git's own directory.
+- Require an existing Git checkout with a commit. Resolve the selected directory to a canonical project identity; reject ambiguous nested selections with a useful message.
+- Add `/.symphony-linear/` to the project root .gitignore without overwriting its contents. Verify effective ignore rules before writing state; reject already tracked state, without automatically untracking user files. Ignore rules prevent ordinary staging, not force-add.
+- Generate WORKFLOW.md, tickets/, worktrees/, logs/ and runtime metadata. Repeated init preserves existing configuration/tickets and reports an existing healthy instance.
+- Bind the dashboard to 127.0.0.1 with port 0 so the OS allocates a free port. Persist and print the actual URL only after startup succeeds.
+- One instance per canonical project; different projects run independently. Protect concurrent start/init; verify instance identity before stop, handle stale state, and wait for readiness/shutdown.
+- Generate worktree creation/removal through Git; preserve dirty worktrees and review branches. No automatic remote push or merge. Adjust example agent prompt to worktree semantics.
+- Preserve the existing explicit-workflow CLI for compatibility. No project-language detection or automatic dependency installation in v1.
+
+Confirmed ticket settings:
+- Claude is the workflow default. Reuse existing per-ticket Claude/Codex and model selection; no init-time provider question or automatic fallback. Provider changes apply to the next attempt, not an already running session.
+- Add a per-ticket starting/base branch selector to creation and ticket details before the first dispatch. Keep this separate from the existing `branch`/`branch_name` field: the base branch is the source, while each agent works on its own ticket branch.
+
+Proposed branch semantics:
+- Initialize a project default base branch from the checked-out branch; allow overriding it in WORKFLOW.md. On detached HEAD, require an explicit base branch.
+- Offer local and already fetched remote-tracking branches; do not automatically fetch. Resolve and validate the chosen ref in the selected project at worktree creation, using argument-safe Git invocation.
+- Store the choice as `base_branch` on local tickets. At first dispatch, record the resolved commit and create the ticket branch/worktree from it. Existing ticket worktrees are reused on retries and rework; never silently reset/rebase them when the base moves.
+- Make the base choice read-only after workspace creation. Missing/deleted branches produce an actionable ticket failure without falling back to another branch.
+- Ignore uncommitted changes in the primary checkout; no auto-push or merge.
+
+Implementation sequence:
+- [x] CLI packaging and project initialization; generated workflow and safe ignore handling.
+- [x] Ticket base-branch field, branch listing/validation, dashboard selector and API persistence.
+- [x] Git worktree lifecycle and prompt, including dirty workspace preservation.
+- [x] Background lifecycle, project lock, readiness, dynamic port and status URL.
+- [x] Docs and focused integration tests, then full tests/typecheck in an isolated container.
+
+Scope: package.json, src/{core,local,workflow,dashboard.html} for ticket base-branch configuration/UI, src/cli.ts, small project/lifecycle module(s) as needed, src/workspace.ts, src/orchestrator.ts (locking/cleanup), src/server.ts (bound address as needed), generated workflow template, bin launcher if needed, tests/fixtures and README. Reuse LocalTracker, config loader, dashboard, process handling and server port-0 support.
+
+Validation: two projects simultaneously; repeat/concurrent init; occupied ports; startup failure/stale metadata; unrelated-process stop protection; paths with spaces; .gitignore preservation and already tracked state; worktree branch/base and safe cleanup; branch persistence, invalid refs, moved/deleted bases, retry/rework preservation and provider override/default; existing explicit-workflow behavior. Use fake agent CLIs, no paid agent dispatch.
+
+Limits/risks: Git ignore is not an absolute commit prohibition; Git worktrees share repository metadata and are not security sandboxes. Provider authentication and sandbox access to shared Git metadata/local board need validation. Local ignored tickets are not backed up by Git. Runtime port may change after restart.
+
+
+### Project initialization — implementation and verification
+
+Implemented the global `symphony-linear` alias with init/start/stop/status, authenticated background lifecycle,
+OS-selected localhost ports, ignored project-local state, Claude defaults and per-ticket provider/model selection.
+Added local/remote-tracking base branch selection, immutable starting commit metadata, Git worktree creation,
+retry/rework reuse and safe removal that retains branches and refuses dirty trees. Failed setup hooks retry
+before dispatch. Deleted ticket branches fail instead of silently recreating from the old base.
+
+The packaged JS launcher uses Node's type-stripping API only for this package's own TS files, including
+background children and tracker tools; this fixes global npm installs under node_modules without a build.
+Codex project attempts receive writable roots for the local ticket directory and shared Git metadata.
+The development image now includes Git for actual worktree integration tests. Stale lock recovery is
+serialized to prevent two concurrent starters from reclaiming the same dead lock and dispatching twice.
+An interrupted recovery guard requires inspection rather than unsafe automatic takeover.
+
+Verification (isolated symphony-project-init container):
+- Full suite: 71/71 passed; TypeScript typecheck clean; git diff --check clean.
+- npm pack + global install into /tmp/symphony-installed succeeded.
+- All 10 project tests also passed using the globally installed command, including both fake-provider
+  end-to-end runs that commit on the selected branch and update tickets through the installed tracker tool.
+- Dashboard script parses; branch selection and locking verified through HTTP API.
+
+Not checked: visual browser interaction, real authenticated Claude/Codex runs, platform-specific sandbox
+policy behavior, or Windows (the project requires Bash/POSIX process handling). No host Node/npm commands,
+no global host installation, no push, no merge, and no edits to the main checkout.
+
+
+### Interactive installed-package test — 2026-10-26
+
+Tested the globally installed tarball in Chrome through a localhost-only proxy to a disposable
+container project with a space-containing path. Used fake Claude/Codex CLIs, actual Git worktrees,
+actual commits and the installed tracker helper.
+
+Passed:
+- New-ticket form defaults to Claude and exposes local base branches.
+- Created a Codex ticket from release; changed its base branch before dispatch.
+- Unsaved provider changes disable status transitions, including while saving a branch change.
+- Dispatched from the UI; ticket reached Human Review with its comment and locked base selector.
+- Created and dispatched a second ticket using default Claude; it also reached Human Review.
+- Git graph confirms both ticket commits descend from release, not the newer main commit.
+- Visually inspected the rendered ticket panel; no layout issue observed. No browser console errors.
+- Stopped/restarted the daemon: new port allocated, both tickets/providers persisted in the UI.
+
+No code changes were needed. This supersedes the earlier untested-browser limitation. Real
+provider authentication/inference and platform-specific sandbox enforcement remain untested.
+Stopped the disposable service and removed its test container after verification.

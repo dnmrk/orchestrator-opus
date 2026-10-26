@@ -5,7 +5,8 @@
   "description": "Claude Code and Codex ticket orchestration for local boards and Jira",
   "type": "module",
   "bin": {
-    "symphony": "src/cli.ts"
+    "symphony": "bin/symphony.mjs",
+    "symphony-linear": "bin/symphony.mjs"
   },
   "engines": {
     "node": ">=24"
@@ -22,5 +23,12 @@
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^7.0.2"
-  }
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "WORKFLOW.example.md",
+    "WORKFLOW.jira.example.md"
+  ]
 }

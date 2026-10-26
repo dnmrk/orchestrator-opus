@@ -34,6 +34,8 @@ export type Config = {
   boardHidden: string[];
   boardTitle: string;
   workspaceRoot: string;
+  projectRoot: string | null;
+  baseBranch: string | null;
   /** Deviation from SPEC 9: every issue runs in this one existing directory (never created or deleted). */
   workspaceShared: string | null;
   hooks: {
@@ -174,6 +176,9 @@ export function buildConfig(wf: Workflow): Config {
   if (shared && !(existsSync(shared) && statSync(shared).isDirectory())) {
     throw new WorkflowError('invalid_config', `workspace.shared ${shared} is not an existing directory`);
   }
+  if (c.workspace?.project && (shared || kind !== 'local' || !str(c.workspace?.base_branch))) {
+    throw new WorkflowError('invalid_config', 'workspace.project requires a local tracker, base_branch, and no shared workspace');
+  }
   return {
     workflowDir,
     tracker: {
@@ -191,6 +196,8 @@ export function buildConfig(wf: Workflow): Config {
     workspaceRoot: c.workspace?.root
       ? expandPath(c.workspace.root, workflowDir)
       : resolve(tmpdir(), 'symphony_workspaces'),
+    projectRoot: c.workspace?.project ? expandPath(c.workspace.project, workflowDir) : null,
+    baseBranch: str(c.workspace?.base_branch),
     workspaceShared: shared,
     hooks: {
       afterCreate: str(c.hooks?.after_create),

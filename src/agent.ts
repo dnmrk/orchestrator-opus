@@ -15,6 +15,7 @@ export type AgentEvent = {
 
 export type TurnOptions = {
   cwd: string;
+  writableRoots?: string[];
   sessionId: string;
   resume: boolean;
   prompt: string;
@@ -31,9 +32,10 @@ export function claudeCommand(cfg: Config['claude'], sessionId: string, resume: 
   return `${cfg.command} ${args.map(shq).join(' ')}`;
 }
 
-export function codexCommand(cfg: Config['codex'], sessionId: string, resume: boolean): string {
+export function codexCommand(cfg: Config['codex'], sessionId: string, resume: boolean, writableRoots: string[] = []): string {
   if (resume && !sessionId) throw new Error('cannot resume Codex without a thread ID');
   const args = ['-c', 'approval_policy="never"', '-c', `sandbox_mode="${cfg.sandbox}"`, 'exec'];
+  if (writableRoots.length && cfg.sandbox === 'workspace-write') args.splice(0, 0, '-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(writableRoots)}`);
   if (resume) args.push('resume');
   args.push('--json', '--model', cfg.model);
   if (resume) args.push(sessionId);
@@ -86,7 +88,7 @@ export function runTurn(o: TurnOptions): Promise<void> {
   return new Promise((resolvePromise, reject) => {
     if (o.signal.aborted) return reject(new Error(String(o.signal.reason ?? 'aborted')));
     const codex = o.provider === 'codex';
-    const command = o.provider === 'codex' ? codexCommand(o.cfg, o.sessionId, o.resume) : claudeCommand(o.cfg, o.sessionId, o.resume);
+    const command = o.provider === 'codex' ? codexCommand(o.cfg, o.sessionId, o.resume, o.writableRoots) : claudeCommand(o.cfg, o.sessionId, o.resume);
     const child = spawn('bash', ['-lc', orphanGuard() + command], {
       cwd: o.cwd,
       env: o.env,

@@ -1,3 +1,5 @@
+import { branchCommit } from './git.ts';
+import { worktreeLock, worktreeStarted } from './worktree.ts';
 import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -69,7 +71,7 @@ function ticketAgent(body: Record<string, unknown>) {
 }
 
 /** SPEC 13.7 HTTP extension (dashboard at `/`, JSON under `/api/v1/*`) plus the board's ticket endpoints. */
-export function startServer(orch: Orchestrator, port: number): Promise<Server> {
+export function startServer(orch: Orchestrator, port: number, instance?: { project: string; token: string; stop: () => void }): Promise<Server> {
   const server = createServer(async (req, res) => {
     const send = (status: number, body: unknown, type = 'application/json') => {
       res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
@@ -85,6 +87,14 @@ export function startServer(orch: Orchestrator, port: number): Promise<Server> {
       const path = new URL(req.url ?? '/', 'http://localhost').pathname;
       const tracker = orch.tracker;
 
+      if (instance && (path === '/api/v1/instance' || path === '/api/v1/instance/stop')) {
+        if (req.headers.authorization !== `Bearer ${instance.token}`) throw new HttpError(403, 'forbidden', 'invalid instance token');
+        const stop = path.endsWith('/stop');
+        allow(stop ? 'POST' : 'GET');
+        send(200, { project: instance.project, pid: process.pid });
+        if (stop) setImmediate(instance.stop);
+        return;
+      }
       if (path === '/') return allow('GET'), send(200, dashboard(), 'text/html; charset=utf-8');
       if (path === '/api/v1/state') return allow('GET'), send(200, orch.snapshot());
       if (path === '/api/v1/refresh') return allow('POST'), send(202, orch.requestRefresh());
@@ -104,7 +114,13 @@ export function startServer(orch: Orchestrator, port: number): Promise<Server> {
         const priority = b.priority == null || b.priority === '' ? null : Number(b.priority);
         const selection = ticketAgent(b);
         if (priority !== null && !(Number.isInteger(priority) && priority >= 1 && priority <= 4)) throw new HttpError(400, 'invalid_field', 'priority must be 1-4');
+        const baseBranch = orch.cfg.projectRoot ? text(b.base_branch ?? orch.cfg.baseBranch, 'base_branch', 500, true) : null;
+        if (baseBranch) {
+          try { await branchCommit(orch.cfg.projectRoot!, baseBranch); }
+          catch (e) { throw new HttpError(400, 'invalid_branch', errMsg(e)); }
+        }
         const identifier = await tracker.create({
+          base_branch: baseBranch,
           title: text(b.title, 'title', 200, true),
           description: text(b.description, 'description', 20_000, false),
           state: b.state === undefined ? orch.cfg.boardColumns[0] : columnState(orch, b.state),
@@ -118,13 +134,22 @@ export function startServer(orch: Orchestrator, port: number): Promise<Server> {
         return send(201, { identifier });
       }
 
-      const m = /^\/api\/v1\/tickets\/([^/]+)\/(state|comments|agent)$/.exec(path);
+      const m = /^\/api\/v1\/tickets\/([^/]+)\/(state|comments|agent|base-branch)$/.exec(path);
       if (m) {
         allow('POST');
         const identifier = decodeURIComponent(m[1]);
         const b = await readJson(req);
         try {
-          if (m[2] === 'agent') {
+          if (m[2] === 'base-branch') {
+            if (!orch.cfg.projectRoot || !tracker.setBaseBranch) throw new HttpError(400, 'unsupported', 'Project worktrees are not configured');
+            const branch = text(b.base_branch, 'base_branch', 500, true);
+            await branchCommit(orch.cfg.projectRoot, branch);
+            const unlock = await worktreeLock(orch.cfg, identifier);
+            try {
+              if (worktreeStarted(orch.cfg, identifier) || orch.running.has(identifier)) throw new HttpError(409, 'workspace_started', 'Base branch is fixed once a ticket starts');
+              await tracker.setBaseBranch(identifier, branch);
+            } finally { await unlock(); }
+          } else if (m[2] === 'agent') {
             if (!tracker.setAgent) throw new HttpError(501, 'not_supported', 'tracker does not support agent selection');
             await tracker.setAgent(identifier, ticketAgent(b));
           } else {

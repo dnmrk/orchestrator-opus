@@ -13,6 +13,7 @@ import { buildConfig, loadWorkflow, type Config } from './workflow.ts';
 
 const USAGE = `usage:
   symphony-linear init [project] [--base-branch branch]  initialize and start (default .)
+  symphony-linear list                                list running project instances
   symphony-linear start|stop|status [project]            manage a background instance
   symphony [path/to/WORKFLOW.md] [--port N]      run the orchestrator (default ./WORKFLOW.md);
                                                  --port (or server.port) serves the dashboard on 127.0.0.1
@@ -47,7 +48,7 @@ async function main() {
   const [cmd, ...rest] = args;
   if (cmd === '-h' || cmd === '--help') return console.log(USAGE);
   if (cmd === 'tracker') return trackerTool(rest);
-  if (['init', 'start', 'stop', 'status'].includes(cmd)) return projectCommand(cmd, rest);
+  if (['init', 'start', 'stop', 'status', 'list'].includes(cmd)) return projectCommand(cmd, rest);
   const project = cmd === '_serve' ? rest[0] : null;
   const token = project ? process.env.SYMPHONY_INSTANCE_TOKEN : null;
   delete process.env.SYMPHONY_INSTANCE_TOKEN;

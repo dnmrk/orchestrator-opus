@@ -1,4 +1,5 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, open, readFile, realpath, rename, rm, lstat, writeFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
@@ -72,6 +73,20 @@ export async function control(instance: Instance, stop = false): Promise<boolean
   } catch { return false; }
 }
 
+/** Discover older daemons too, without a registry that would need migration or stale-entry cleanup. */
+export async function listInstances(): Promise<Omit<Instance, 'token'>[]> {
+  const { stdout } = await promisify(execFile)('ps', ['-axww', '-o', 'pid=,command='], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+  const instances = await Promise.all(stdout.split('\n').map(async (line) => {
+    // shortcut: ps cannot recover project paths containing newlines; use a registry if those need support.
+    const match = /^\s*(\d+)\s+.+?\/bin\/symphony\.mjs _serve (.+)$/.exec(line);
+    if (!match) return null;
+    const instance = await readInstance(match[2]).catch(() => null);
+    if (!instance || instance.pid !== Number(match[1]) || !await control(instance)) return null;
+    return { project: instance.project, pid: instance.pid, url: instance.url };
+  }));
+  return instances.filter((instance) => instance !== null).sort((a, b) => a.project.localeCompare(b.project));
+}
+
 export async function saveInstance(instance: Instance) {
   const path = join(stateDir(instance.project), 'runtime.json');
   const temp = `${path}.${process.pid}.tmp`;
@@ -80,6 +95,14 @@ export async function saveInstance(instance: Instance) {
 }
 
 export async function projectCommand(command: string, args: string[]) {
+  if (command === 'list') {
+    if (args.length) throw new Error('usage: symphony-linear list');
+    const instances = await listInstances();
+    if (!instances.length) { console.log('No running Symphony project instances.'); return; }
+    console.log('PID\tURL\tPROJECT');
+    for (const instance of instances) console.log(`${instance.pid}\t${instance.url}\t${instance.project}`);
+    return;
+  }
   const baseAt = args.indexOf('--base-branch');
   const base = baseAt < 0 ? undefined : args.splice(baseAt, 2)[1];
   if (baseAt >= 0 && (!base || command !== 'init')) throw new Error('--base-branch <branch> is only valid with init');

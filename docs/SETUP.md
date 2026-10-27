@@ -229,7 +229,18 @@ symphony-linear status ~/Sites/project1
 symphony-linear stop ~/Sites/project2
 ```
 
-Each project has independent configuration, tickets and a background instance.
+Each project has independent configuration, tickets and a background instance. To see all running
+project instances from any directory:
+
+```bash
+symphony-linear list
+```
+
+The command prints PID, dashboard URL and project path after verifying each instance is responding.
+It discovers already-running daemons, omits stale/unresponsive entries and never prints control tokens.
+It lists background project instances visible to your user on the current machine; standalone foreground
+workflows and processes inside other containers or machines are not included. Discovery uses `ps`
+(included on macOS; install `procps` on minimal Linux systems if missing).
 
 ## Troubleshooting
 

@@ -76,6 +76,7 @@ its own tickets, configuration and ticket worktrees. Claude is the default; tick
 Codex, a model and a base branch.
 
 ```bash
+symphony-linear list           # running project instances: PID, dashboard URL and path
 symphony-linear status .
 symphony-linear stop .
 symphony-linear start .

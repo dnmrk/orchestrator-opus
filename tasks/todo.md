@@ -346,3 +346,16 @@ Scope: small prompt helper, orchestrator first-turn caller, tests and setup guid
 Validation: 83/83 tests and typecheck passed in the isolated task container. Covered newest-checkpoint selection, original requirements and all newer feedback, missing/empty/misplaced handoff fallback, CRLF/repeated sections, unchanged stored history, persisted tracker rereads and fresh daemon review dispatch for both Claude and Codex. Long-history test prompts shrink to less than one fifth of the original without an additional model call.
 
 Limits: local timestamped comments only; agents must write a cumulative handoff for compaction to apply. No real model runs or measured billing savings. No hard truncation of feedback or summaries. Full historical comments remain accessible in the ticket file/dashboard. Not merged, pushed or deployed.
+
+## List running project instances
+
+- [x] Add `symphony-linear list`, usable from any directory, with PID, URL and canonical project path.
+- [x] Discover existing background daemons through the process table and reuse readInstance/control to verify identity.
+- [x] Exclude stale, malformed and unresponsive records; omit private control tokens.
+- [x] Test empty/multiple instances, paths with spaces, stop/restart and invalid arguments; document scope and verify tests/typecheck.
+
+Scope: src/cli.ts and src/project.ts, project tests, README/setup guide and development image (procps supplies ps on slim Linux). No registry, filesystem scan, new runtime npm dependencies or lifecycle policy changes. Lists background project instances visible on this machine; standalone foreground workflows remain outside the project lifecycle.
+
+Validation: 84/84 tests passed, typecheck and git diff --check clean in symphony-list-instances container. The shipped bin launcher lists two actual authenticated background projects from outside a Git checkout, preserves paths with spaces, hides tokens, and reflects stop/restart. Fake daemon processes verify missing/corrupt metadata, PID mismatch and a non-Symphony endpoint are omitted without stopping the processes.
+
+Limits: macOS runtime discovery not exercised; Linux integration passed. Foreground standalone workflows, other process namespaces and newline-containing paths are outside discovery scope. No host Node/npm commands, installation, merge or push.

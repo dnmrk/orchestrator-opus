@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { git } from '../src/git.ts';
-import { initialize, projectRoot, readInstance, stateDir, control } from '../src/project.ts';
+import { initialize, projectRoot, readInstance, stateDir, control, listInstances } from '../src/project.ts';
 import { buildConfig, loadWorkflow } from '../src/workflow.ts';
 import { ensureWorkspace, removeWorkspace } from '../src/workspace.ts';
 import { worktreeStarted } from '../src/worktree.ts';
@@ -83,11 +83,22 @@ test('worktrees use chosen committed base, reuse work, and protect dirty trees a
 });
 
 test('background init is repeatable and concurrent, projects have separate ports, stop is authenticated', async () => {
+  assert.equal((await cli('list')).stdout.trim(), 'No running Symphony project instances.');
+  await assert.rejects(cli('list', 'extra'), /usage: symphony-linear list/);
+  await assert.rejects(cli('list', '--base-branch', 'main'), /usage: symphony-linear list/);
   const a = await repo(), b = await repo();
   try {
     await Promise.all([cli('init', a), cli('init', a), cli('init', b)]);
     const first = (await readInstance(a))!, second = (await readInstance(b))!;
     assert.notEqual(first.url, second.url);
+    const listed = await exec(process.execPath, [process.env.SYMPHONY_TEST_CLI ?? resolve('bin/symphony.mjs'), 'list'], { cwd: tmp(), timeout: 30_000 });
+    const lines = listed.stdout.trim().split('\n');
+    assert.equal(lines[0], 'PID\tURL\tPROJECT');
+    assert.equal(lines.length, 3);
+    assert.ok(lines.includes(`${first.pid}\t${first.url}\t${a}`));
+    assert.ok(lines.includes(`${second.pid}\t${second.url}\t${b}`));
+    assert.ok(!listed.stdout.includes(first.token) && !listed.stdout.includes(second.token));
+    assert.deepEqual((await listInstances()).map((instance) => instance.project), [a, b].sort((x, y) => x.localeCompare(y)));
     assert.ok(await control(first));
     assert.match((await cli('status', a)).stdout, /Running:/);
     await cli('init', a);
@@ -97,9 +108,13 @@ test('background init is repeatable and concurrent, projects have separate ports
     await cli('stop', a);
     assert.equal(await readInstance(a), null);
     assert.ok(await control(second));
+    const afterStop = (await cli('list')).stdout;
+    assert.ok(!afterStop.includes(a));
+    assert.ok(afterStop.includes(b));
     assert.match((await cli('status', a)).stdout, /Stopped/);
     await cli('start', a);
     assert.ok(await control((await readInstance(a))!));
+    assert.ok((await cli('list')).stdout.includes(a));
   } finally { await Promise.all([cli('stop', a), cli('stop', b)]); }
 });
 
@@ -212,4 +227,36 @@ test('a stopped process with stale metadata is replaced without touching its old
   await writeFile(join(stateDir(dir), 'daemon.lock'), '2147483647');
   try { await Promise.all([cli('start', dir), cli('start', dir)]); assert.ok(await control((await readInstance(dir))!)); }
   finally { await cli('stop', dir); }
+});
+
+test('list ignores malformed, stale and unresponsive daemon metadata without exposing tokens', async () => {
+  const root = tmp();
+  const bin = join(root, 'bin');
+  await mkdir(bin);
+  const daemon = join(bin, 'symphony.mjs');
+  await writeFile(daemon, 'setInterval(() => {}, 1000);');
+  const children = [];
+  const server = createServer((_req, res) => { res.writeHead(404); res.end('{}'); });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address() as { port: number };
+  try {
+    for (const mode of ['missing', 'malformed', 'wrong-pid', 'unresponsive']) {
+      const project = join(root, mode + ' project');
+      await mkdir(stateDir(project), { recursive: true });
+      const child = spawn(process.execPath, [daemon, '_serve', project], { stdio: 'ignore' });
+      children.push(child);
+      await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+      if (mode === 'missing') continue;
+      await writeFile(join(stateDir(project), 'runtime.json'), mode === 'malformed' ? '{' : JSON.stringify({
+        project, pid: mode === 'wrong-pid' ? process.pid : child.pid,
+        url: `http://127.0.0.1:${port}`, token: 'do-not-print-this-token',
+      }));
+    }
+    assert.deepEqual(await listInstances(), []);
+    assert.equal((await cli('list')).stdout.trim(), 'No running Symphony project instances.');
+    for (const child of children) process.kill(child.pid!, 0);
+  } finally {
+    for (const child of children) child.kill('SIGTERM');
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });

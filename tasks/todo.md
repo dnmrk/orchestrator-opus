@@ -359,3 +359,44 @@ Scope: src/cli.ts and src/project.ts, project tests, README/setup guide and deve
 Validation: 84/84 tests passed, typecheck and git diff --check clean in symphony-list-instances container. The shipped bin launcher lists two actual authenticated background projects from outside a Git checkout, preserves paths with spaces, hides tokens, and reflects stop/restart. Fake daemon processes verify missing/corrupt metadata, PID mismatch and a non-Symphony endpoint are omitted without stopping the processes.
 
 Limits: macOS runtime discovery not exercised; Linux integration passed. Foreground standalone workflows, other process namespaces and newline-containing paths are outside discovery scope. No host Node/npm commands, installation, merge or push.
+
+
+## Open project dashboard
+
+- [x] Open the ready dashboard after init/start, including an already running instance.
+- [x] Add open [project], validate instance identity, and refuse stopped projects.
+- [x] Cover launcher success/failure and lifecycle behavior; update help and setup docs.
+- [x] Run tests and typecheck in symphony-open-dashboard container.
+
+Scope: project lifecycle, CLI routing/help, project tests, README and setup guide. Use macOS open/Linux xdg-open without a dependency; browser launch failure prints a manual URL and preserves the daemon. No standalone workflow or server changes.
+
+Validation: 85/85 tests passed and typecheck clean in the isolated symphony-open-dashboard container; git diff --check clean. A fake platform launcher fetches the dashboard before recording its URL, covering init/start/open, existing-instance reuse, stopped-project refusal, argument validation and launcher failures without terminating the daemon.
+
+Limits: actual macOS/Linux desktop browser launch was not exercised; Linux uses xdg-open and macOS uses open. No new dependency, host Node/npm command, global installation, merge or push.
+
+
+## Investigate startup ExperimentalWarning
+
+- [x] Reproduce the warning through the shipped bin/symphony.mjs launcher in Node 24.22.1.
+- [x] Trace it to the packaged-source load hook calling node:module stripTypeScriptTypes.
+- [x] Verify background lifecycle using the shipped launcher.
+
+Finding: this is Node's experimental-API notice, emitted by the public stripping API even though native TypeScript execution is stable. The hook is needed for globally installed source under node_modules. No runtime fix is required by the warning alone; keep warnings visible rather than adding a process-wide suppression or a build dependency.
+
+Validation: all 12 project integration tests passed with SYMPHONY_TEST_CLI=/app/bin/symphony.mjs in the isolated container, including actual background readiness, status, stop/start, browser launching and both fake-provider dispatches. No runtime code changed; real provider runs and the user’s host process were not inspected.
+
+
+## Default symphony-linear to help
+
+- [x] Route argument-free symphony-linear to the existing help text while preserving symphony's default WORKFLOW.md execution.
+- [x] Cover both executable aliases with real symlinks to the packaged launcher.
+- [x] Verify project tests, typecheck and whitespace in the isolated container.
+
+Scope: CLI entrypoint, one regression test and task notes; no launcher, configuration or workflow changes.
+
+Validation: 13/13 project tests passed, typecheck and git diff --check clean. Alias regression uses real symlinks from outside a project and confirms argument-free output matches --help exactly; symphony still attempts WORKFLOW.md. Full suite not repeated for this routing-only change; no host global reinstall, merge or push.
+
+
+## Local merge verification
+
+Rebased feat/open-dashboard onto current main before merging. Full suite: 86/86 tests passed; typecheck and git diff --check clean in the isolated symphony-open-dashboard container. Reviewed CLI routing, shared browser launcher, readiness/failure behavior, regression tests and documentation. Desktop browser launch remains untested; no global installation or remote push.

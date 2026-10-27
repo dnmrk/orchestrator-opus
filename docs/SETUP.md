@@ -113,8 +113,9 @@ Successful initialization prints an address such as:
 Running: http://127.0.0.1:49173
 ```
 
-Open the **address printed by your command** in a browser. Symphony runs in the background
-and keeps running when the terminal closes. The browser does not open automatically.
+Initialization and `start` open the dashboard in your default browser. Symphony runs in the
+background and keeps running when the terminal closes. If the browser cannot open (for example,
+on a headless machine), open the **address printed by your command** manually.
 Each project gets an available localhost port, which can change after a restart.
 
 Initialization adds `/.symphony-linear/` to the project's `.gitignore` and creates:
@@ -215,11 +216,12 @@ From an initialized project root:
 symphony-linear status .
 symphony-linear stop .
 symphony-linear start .
+symphony-linear open .          # reopen the running dashboard
 ```
 
 There is no separate restart command: run `stop`, then `start`. `status` prints the current
-address. Stopping preserves tickets and worktrees. Instances do not start automatically after
-a machine reboot.
+address; `open` opens it without starting an instance. Stopping preserves tickets and worktrees.
+Instances do not start automatically after a machine reboot.
 
 Use an explicit path to manage another project:
 

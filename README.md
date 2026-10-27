@@ -70,7 +70,7 @@ cd ~/Sites/project1
 symphony-linear init .
 ```
 
-Open the localhost URL printed by the command. Initialization creates ignored state under
+Initialization opens the dashboard in your default browser and creates ignored state under
 `.symphony-linear/` and starts a background instance on an available port. Each project has
 its own tickets, configuration and ticket worktrees. Claude is the default; tickets can select
 Codex, a model and a base branch.
@@ -79,7 +79,8 @@ Codex, a model and a base branch.
 symphony-linear list           # running project instances: PID, dashboard URL and path
 symphony-linear status .
 symphony-linear stop .
-symphony-linear start .
+symphony-linear start .        # start and open the dashboard
+symphony-linear open .         # open an already running dashboard
 ```
 
 These are end-user host commands. Contributors must follow [AGENTS.md](AGENTS.md) and run

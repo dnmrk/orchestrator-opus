@@ -94,6 +94,14 @@ export async function saveInstance(instance: Instance) {
   await rename(temp, path);
 }
 
+async function openDashboard(url: string) {
+  try {
+    await promisify(execFile)(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { timeout: 5000 });
+  } catch {
+    console.error(`Could not open browser. Open ${url} manually.`);
+  }
+}
+
 export async function projectCommand(command: string, args: string[]) {
   if (command === 'list') {
     if (args.length) throw new Error('usage: symphony-linear list');
@@ -125,6 +133,7 @@ export async function projectCommand(command: string, args: string[]) {
       console.log(healthy ? `Running: ${previous.url}` : 'Stopped (no responding instance)');
       return;
     }
+    if (command === 'open' && !healthy) throw new Error('No responding instance. Run symphony-linear start .');
     if (command === 'stop') {
       if (!healthy) { console.log('No responding instance; no process was signalled.'); return; }
       if (!await control(previous, true)) throw new Error('Instance rejected shutdown');
@@ -134,7 +143,7 @@ export async function projectCommand(command: string, args: string[]) {
       }
       throw new Error('Shutdown is still in progress; check status and logs');
     }
-    if (healthy) { console.log(`Running: ${previous.url}`); return; }
+    if (healthy) { console.log(`Running: ${previous.url}`); await openDashboard(previous.url); return; }
     if (previous) {
       let alive = false;
       try { process.kill(previous.pid, 0); alive = true; } catch (e: any) { if (e.code !== 'ESRCH') alive = true; }
@@ -155,6 +164,7 @@ export async function projectCommand(command: string, args: string[]) {
       if (!await control(instance)) throw new Error('Instance failed readiness check');
       child.disconnect(); child.unref();
       console.log(`Running: ${instance.url}`);
+      await openDashboard(instance.url);
     } catch (e) { child.kill('SIGTERM'); throw e; }
   } finally { await unlock(); }
 }

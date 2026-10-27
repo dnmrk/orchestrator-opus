@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import type { AddressInfo } from 'node:net';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { projectCommand, stateDir, saveInstance, clearInstance } from './project.ts';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ import { buildConfig, loadWorkflow, type Config } from './workflow.ts';
 const USAGE = `usage:
   symphony-linear init [project] [--base-branch branch]  initialize and start (default .)
   symphony-linear list                                list running project instances
-  symphony-linear start|stop|status [project]            manage a background instance
+  symphony-linear start|stop|status|open [project]       manage or open a background instance
   symphony [path/to/WORKFLOW.md] [--port N]      run the orchestrator (default ./WORKFLOW.md);
                                                  --port (or server.port) serves the dashboard on 127.0.0.1
   symphony tracker comment <KEY> [text | -]      (agent tool) comment on the issue; '-' or no text reads stdin
@@ -46,9 +46,9 @@ async function trackerTool([op, key, ...rest]: string[]) {
 async function main() {
   const args = process.argv.slice(2);
   const [cmd, ...rest] = args;
-  if (cmd === '-h' || cmd === '--help') return console.log(USAGE);
+  if (cmd === '-h' || cmd === '--help' || (!cmd && basename(process.argv[1]) === 'symphony-linear')) return console.log(USAGE);
   if (cmd === 'tracker') return trackerTool(rest);
-  if (['init', 'start', 'stop', 'status', 'list'].includes(cmd)) return projectCommand(cmd, rest);
+  if (['init', 'start', 'stop', 'status', 'open', 'list'].includes(cmd)) return projectCommand(cmd, rest);
   const project = cmd === '_serve' ? rest[0] : null;
   const token = project ? process.env.SYMPHONY_INSTANCE_TOKEN : null;
   delete process.env.SYMPHONY_INSTANCE_TOKEN;

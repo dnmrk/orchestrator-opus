@@ -30,6 +30,20 @@ async function repo() {
 }
 const config = (dir: string) => buildConfig(loadWorkflow(join(stateDir(dir), 'WORKFLOW.md')));
 
+test('symphony-linear defaults to help while symphony keeps its default workflow', async () => {
+  const dir = tmp();
+  const launcher = resolve('bin/symphony.mjs');
+  const linear = join(dir, 'symphony-linear');
+  const standalone = join(dir, 'symphony');
+  await symlink(launcher, linear);
+  await symlink(launcher, standalone);
+  const run = (bin: string, args: string[] = []) => exec(process.execPath, [bin, ...args], { cwd: dir, timeout: 30_000 });
+  const help = await run(linear, ['--help']);
+  assert.equal((await run(linear)).stdout, help.stdout);
+  assert.match(help.stdout, /^usage:/);
+  await assert.rejects(run(standalone), /WORKFLOW\.md/);
+});
+
 test('initialization preserves config/tickets and ignores state; rejects tracked state and symlinks', async () => {
   const dir = await repo();
   await writeFile(join(dir, '.gitignore'), 'existing');
@@ -116,6 +130,44 @@ test('background init is repeatable and concurrent, projects have separate ports
     assert.ok(await control((await readInstance(a))!));
     assert.ok((await cli('list')).stdout.includes(a));
   } finally { await Promise.all([cli('stop', a), cli('stop', b)]); }
+});
+
+test('init/start/open launch the ready dashboard and browser failures preserve the instance', async () => {
+  const dir = await repo();
+  const bin = tmp();
+  const launches = join(bin, 'launches');
+  const launcher = `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
+if (process.env.FAIL_BROWSER) process.exit(1);
+const response = await fetch(process.argv[2]);
+if (!response.ok) process.exit(2);
+appendFileSync(process.env.BROWSER_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
+`;
+  await writeFile(join(bin, 'package.json'), '{"type":"module"}');
+  for (const command of ['open', 'xdg-open']) await writeFile(join(bin, command), launcher, { mode: 0o755 });
+  const run = (fail: boolean, ...args: string[]) => exec(process.execPath, [process.env.SYMPHONY_TEST_CLI ?? resolve('src/cli.ts'), ...args], {
+    timeout: 30_000, env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, BROWSER_LOG: launches, FAIL_BROWSER: fail ? '1' : '' },
+  });
+  try {
+    await run(false, 'init', dir);
+    const instance = (await readInstance(dir))!;
+    await run(false, 'start', dir);
+    await run(false, 'open', dir);
+    await run(false, 'status', dir);
+    assert.deepEqual((await readFile(launches, 'utf8')).trim().split('\n').map((line) => JSON.parse(line)), [[instance.url], [instance.url], [instance.url]]);
+    assert.equal((await readInstance(dir))!.pid, instance.pid);
+    const failed = await run(true, 'open', dir);
+    assert.ok(failed.stderr.includes(`Could not open browser. Open ${instance.url} manually.`));
+    assert.ok(await control(instance));
+    await run(false, 'stop', dir);
+    await assert.rejects(run(false, 'open', dir), /No responding instance/);
+    assert.equal(await readInstance(dir), null);
+    const restarted = await run(true, 'start', dir);
+    assert.match(restarted.stderr, /Could not open browser/);
+    assert.ok(await control((await readInstance(dir))!));
+    await assert.rejects(run(false, 'open', dir, 'extra'), /usage: symphony-linear open/);
+    assert.match((await run(false, '--help')).stdout, /start\|stop\|status\|open/);
+  } finally { await cli('stop', dir); }
 });
 
 test('base branch API persists choices and locks them after worktree creation; provider selection remains independent', async () => {

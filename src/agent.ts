@@ -53,9 +53,23 @@ export function summarizeCodex(ev: any, at = Date.now()): AgentEvent {
   const message = ev.item?.text ?? ev.item?.command ?? ev.error?.message ?? ev.message;
   if (typeof message === 'string') event.message = message.slice(0, 500);
   if (ev.item?.type === 'file_change' && Array.isArray(ev.item.changes)) {
-    event.message = ev.item.changes.map((c: any) => c?.path).filter(Boolean).join(', ').slice(0, 500);
+    event.message = 'Updating files: ' + ev.item.changes.map((c: any) => c?.path).filter(Boolean).join(', ').slice(0, 500);
   }
   return event;
+}
+
+function toolSummary(part: any): string {
+  const input = part.input ?? {};
+  const target = input.file_path ?? input.path;
+  switch (String(part.name).toLowerCase()) {
+    case 'edit': case 'multiedit': return target ? `Editing ${target}` : 'Editing a file';
+    case 'write': return target ? `Writing ${target}` : 'Writing a file';
+    case 'read': return target ? `Reading ${target}` : 'Reading a file';
+    case 'bash': return typeof input.description === 'string' && input.description.trim() ? input.description : 'Running a shell command';
+    case 'grep': return typeof input.pattern === 'string' ? `Searching for ${input.pattern}` : 'Searching file contents';
+    case 'glob': return typeof input.pattern === 'string' ? `Finding files matching ${input.pattern}` : 'Finding files';
+    default: return `Using ${part.name ?? 'a tool'}`;
+  }
 }
 
 /** Condenses one stream-json line into what the orchestrator tracks. */
@@ -76,7 +90,7 @@ export function summarize(ev: any, at = Date.now()): AgentEvent {
   if (ev.type === 'rate_limit_event') return { type, at, rateLimits: ev.rate_limit_info ?? ev };
   const parts = Array.isArray(ev.message?.content) ? ev.message.content : [];
   const message = parts
-    .map((p: any) => (p.type === 'text' ? p.text : p.type === 'tool_use' ? `[${p.name}]` : ''))
+    .map((p: any) => (p.type === 'text' ? p.text : p.type === 'tool_use' ? toolSummary(p) : ''))
     .filter(Boolean)
     .join(' ')
     .slice(0, 500);

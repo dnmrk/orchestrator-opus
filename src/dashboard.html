@@ -569,7 +569,8 @@ document.addEventListener('mousedown', (ev) => { if (!$('menu').hidden && !ev.ta
 const inline = (s) => esc(s).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
 
 function splitComments(text) {
-  const [body, rest] = String(text ?? '').split(/^## Comments\s*$/m);
+  const [body, ...sections] = String(text ?? '').split(/^## Comments[ \t]*\r?$/m);
+  const rest = sections.join('\n');
   const comments = rest ? rest.split(/^### (.+)$/m).slice(1).reduce((acc, v, i, arr) => (i % 2 ? acc : [...acc, { at: v.trim(), text: (arr[i + 1] ?? '').trim() }]), []) : [];
   return { body: body.trim(), comments };
 }
@@ -620,11 +621,11 @@ function renderPanel(keepDraft = false, force = false) {
       <h2 id="p-title">${esc(t.title)}</h2>
       ${note ? `<div class="note ${a.kind}">${esc(note)}</div>` : ''}
       <section><p class="label">Description</p><div class="prose${body ? '' : ' none'}">${body ? inline(body) : 'No description.'}</div></section>
-      ${events.length ? `<section><p class="label">Agent activity</p><ul class="activity-feed">${events.slice(0, 20).map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></section>` : ''}
+      ${events.length ? `<section><p class="label">Agent activity</p><ul class="activity-feed">${events.map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></section>` : ''}
       <section>
         <p class="label">Activity${comments.length ? `<span class="count">${comments.length}</span>` : ''}</p>
         ${comments.map((c) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div></div>`).join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}
-        <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these when the issue is in Rework."></textarea>
+        <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these on the next run in To Do or Rework."></textarea>
           <div class="row"><button class="btn" type="submit">Comment</button></div></form>
       </section>
     </div>

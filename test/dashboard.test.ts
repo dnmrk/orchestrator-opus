@@ -21,12 +21,13 @@ function dashboard(savedTab = 'board') {
     getElementById: element, querySelector: element, addEventListener() {},
   };
   const html = readFileSync(new URL('../src/dashboard.html', import.meta.url), 'utf8');
-  runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)![1], {
+  const context: any = {
     document, localStorage: { getItem: (k: string) => stored.get(k), setItem: (k: string, v: string) => stored.set(k, v) },
     fetch: () => new Promise(() => {}), setInterval() {},
     matchMedia: () => ({ matches: false, addEventListener() {} }),
-  });
-  return { element, document, stored };
+  };
+  runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)![1], context);
+  return { element, document, stored, splitComments: context.splitComments };
 }
 
 test('dashboard switches views, updates headings and restores the saved activity tab', () => {
@@ -57,4 +58,13 @@ test('dashboard keyboard navigation selects and focuses tabs without interceptin
   assert.equal(document.activeElement, element('tab-activity'));
   key('Tab');
   assert.equal(prevented, 3);
+});
+
+test('all comment sections survive parsing when older ticket updates repeated the heading', () => {
+  const { splitComments } = dashboard();
+  const parsed = splitComments('Request\n\n## Comments\n\n### 2026-10-26\n\nOld feedback\n\n## Comments\n\n### 2026-10-27\n\nNew feedback');
+  assert.equal(parsed.body, 'Request');
+  assert.equal(parsed.comments.length, 2);
+  assert.equal(parsed.comments[0].text, 'Old feedback');
+  assert.equal(parsed.comments[1].text, 'New feedback');
 });

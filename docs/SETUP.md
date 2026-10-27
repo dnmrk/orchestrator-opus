@@ -264,3 +264,31 @@ network and Docker access may require additional configuration. See the
 
 For Jira or a standalone workflow file, use the existing foreground `symphony` interface and
 follow [Run](../README.md#run) and the Jira example workflow in the repository root.
+
+### Review feedback and session context
+
+For local tickets, leave feedback as a comment before moving Human Review back to To Do or Rework.
+The next dispatch starts a new agent session and renders the workflow prompt with the latest ticket
+description when the template includes `issue.description`. For local tickets with a handoff,
+the prompt includes the original requirements, the latest handoff and every newer comment.
+Older comments stay in the ticket file and dashboard. Without a handoff, the full thread is included.
+It reuses the ticket workspace and branch, so finished code remains available. Continuation turns
+and failed handoff checks within one attempt resume the same session. Custom prompts must include
+`{{ issue.description }}` for the model to receive comments.
+
+Local status moves are timestamped in the ticket activity. Model activity remains visible after
+handoff, bounded to 100 events per detail view from the daemon's last 20 runs (50 events per run).
+This streamed activity is cleared when the daemon restarts; ticket comments and status history
+persist in the ticket file. Jira comments are not currently fetched into the prompt or dashboard.
+
+Local agents are asked to leave a comment starting with `## Handoff` before review or a blocker.
+This is a cumulative summary (aim: 200 words) of completed work, relevant files/branch, key decisions,
+verification, remaining issues and unresolved feedback or requirement changes. It is stored in
+the existing ticket file, so the next fresh session can use it even after a daemon restart or
+provider change. No extra model call generates a summary. Feedback after the handoff is included
+in full; Symphony does not truncate it. The handoff serves as the workflow's summary comment.
+Custom workflow prompts must include `{{ issue.description }}`.
+
+This reduces repeated history in prompts; actual token/cost savings depend on the model's work
+and caching. A missing or empty handoff keeps the full history. If a handoff omits an important
+decision, the next agent may need to inspect the full ticket file or relevant code.

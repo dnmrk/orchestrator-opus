@@ -180,16 +180,21 @@ export class LocalTracker implements Tracker, TrackerTools {
   async comment(identifier: string, text: string): Promise<void> {
     if (!text.trim()) throw new Error('comment text is empty');
     await this.update(identifier, (t) => {
-      const body = t.body.trimEnd();
-      const heading = /^## Comments$/m.test(body) ? '' : '\n\n## Comments';
-      return this.serialize(t, `${body}${heading}\n\n### ${new Date().toISOString()}\n\n${text.trim()}\n`);
+      return this.serialize(t, this.appendComment(t.body, text));
     });
+  }
+
+  appendComment(body: string, text: string): string {
+    const heading = /^## Comments[ \t]*\r?$/m.test(body) ? '' : '\n\n## Comments';
+    return `${body.trimEnd()}${heading}\n\n### ${new Date().toISOString()}\n\n${text.trim()}\n`;
   }
 
   async transition(identifier: string, state: string): Promise<string> {
     await this.update(identifier, (t) => {
+      const previous = str(t.meta.state);
       t.doc.set('state', state); // Document API keeps the user's comments and key order
-      return this.serialize(t);
+      return this.serialize(t, previous && norm(previous) !== norm(state)
+        ? this.appendComment(t.body, `Status changed from ${previous} to ${state}.`) : t.body);
     });
     return state;
   }

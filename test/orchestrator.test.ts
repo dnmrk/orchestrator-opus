@@ -54,6 +54,7 @@ test('dispatch → continuation turn on the same session → handoff state relea
     await waitFor(() => calls().length === 2 && !orch.running.size);
     const [first, second] = calls();
     assert.match(first.prompt, /^Work on ABC-1: Do the thing/);
+    assert.doesNotMatch(first.prompt, /## Review handoff/);
     assert.equal(first.args[first.args.indexOf('--session-id') + 1], second.args[second.args.indexOf('--resume') + 1]);
     assert.ok(first.args.includes('test-model'));
     assert.match(second.prompt, /Continue working on ABC-1/);
@@ -427,4 +428,62 @@ test('aborting a run during checks posts no failure comment and does not transit
   await waitFor(() => orch.running.get('1')?.checking === true);
   await orch.stop();
   assert.deepEqual(writes, []);
+});
+
+test('handoff keeps activity visible and returning to To Do starts fresh with review feedback', async () => {
+  const { tracker, orch, calls, workflowPath } = setup();
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8') + '\n{{ issue.description }}');
+  tracker.issues.set('1', issue({ description: 'Original request' }));
+  tracker.onRefresh = () => { if (calls().length) tracker.issues.get('1')!.state = 'Human Review'; };
+  await orch.start();
+  try {
+    await waitFor(() => calls().length === 1 && !orch.running.size);
+    const previous = orch.issueDetail('ABC-1')!;
+    assert.ok(previous.recent_events.some((e) => e.message === 'done'));
+    assert.equal(previous.workspace.path, calls()[0].cwd);
+    await waitFor(() => !orch.claimed.size, 3000);
+    tracker.issues.get('1')!.state = 'To Do';
+    tracker.issues.get('1')!.description = 'Original request\n\n## Comments\n\n### 2026-10-27T00:00:00Z\n\nPlease fix the edge case';
+    await orch.tick();
+    assert.ok(orch.issueDetail('ABC-1')!.recent_events.some((e) => e.message === 'done'));
+    await waitFor(() => calls().length === 2 && !orch.running.size);
+    const [first, second] = calls();
+    assert.ok(!second.args.includes('--resume'));
+    assert.notEqual(first.args[first.args.indexOf('--session-id') + 1], second.args[second.args.indexOf('--session-id') + 1]);
+    assert.match(second.prompt, /Original request[\s\S]*Please fix the edge case/);
+    assert.equal(second.cwd, first.cwd);
+    assert.equal(orch.issueDetail('ABC-1')!.recent_events.filter((e) => e.message === 'done').length, 2);
+    assert.ok(!('events' in orch.snapshot().recent[0]));
+  } finally { await orch.stop(); }
+});
+
+for (const provider of ['claude', 'codex'] as const) test(`${provider} review after restart uses compact context in a fresh session and reuses work`, async () => {
+  const { tracker, orch, calls, workflowPath } = setup('', provider);
+  writeFileSync(workflowPath, readFileSync(workflowPath, 'utf8').replace('kind: jira', 'kind: local') + '\n{{ issue.description }}');
+  const original = 'Requirements: fix search and preserve keyboard navigation.';
+  const old = 'Old investigation '.repeat(1000);
+  tracker.issues.set('1', issue({ description: `${original}\n\n## Comments\n\n### 2026-10-26T00:00:00.000Z\n\n${old}` }));
+  tracker.onRefresh = () => { if (calls().length) tracker.issues.get('1')!.state = 'Human Review'; };
+  await orch.start();
+  try {
+    await waitFor(() => calls().length === 1 && !orch.running.size);
+    assert.match(calls()[0].prompt, /## Review handoff/);
+    assert.match(calls()[0].prompt, /Old investigation/);
+  } finally { await orch.stop(); }
+  tracker.issues.get('1')!.description += '\n\n### 2026-10-26T12:00:00.000Z\n\n## Handoff\n\nCompleted search.ts. Tests passed; keep keyboard fix. Remaining: empty query.\n\n### 2026-10-27T00:00:00.000Z\n\nReview: handle whitespace input too.';
+  tracker.issues.get('1')!.state = 'To Do';
+  const restarted = new Orchestrator({ workflowPath, makeTracker: () => tracker, toolCommand: 'tool-cmd' });
+  await restarted.start();
+  try {
+    await waitFor(() => calls().length === 2 && !restarted.running.size);
+    const [first, next] = calls();
+    assert.equal(next.cwd, first.cwd);
+    assert.ok(!next.args.includes('--resume') && !next.args.includes('resume'));
+    assert.match(next.prompt, /Requirements: fix search and preserve keyboard navigation/);
+    assert.match(next.prompt, /Completed search.ts/);
+    assert.match(next.prompt, /Review: handle whitespace input too/);
+    assert.ok(!next.prompt.includes('Old investigation'));
+    assert.ok(next.prompt.length < first.prompt.length / 5);
+    assert.match(tracker.issues.get('1')!.description!, /Old investigation/);
+  } finally { await restarted.stop(); }
 });

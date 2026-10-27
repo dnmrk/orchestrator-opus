@@ -1,3 +1,4 @@
+import { compactDescription, handoffInstructions } from './handoff.ts';
 import { branches, git } from './git.ts';
 import { worktreeStarted } from './worktree.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -36,7 +37,7 @@ type Running = {
 
 type Retry = { identifier: string; url: string | null; attempt: number; dueAt: number; timer: NodeJS.Timeout; error: string | null };
 
-type Outcome = { identifier: string; url: string | null; provider: AgentProvider; model: string | null; outcome: string; at: number; turns: number; tokens: { input: number; output: number }; error: string | null };
+type Outcome = { events: Running['events']; workspace: string | null; identifier: string; url: string | null; provider: AgentProvider; model: string | null; outcome: string; at: number; turns: number; tokens: { input: number; output: number }; error: string | null };
 
 const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
 const tokens = (t: { input: number; output: number }) => ({ input_tokens: t.input, output_tokens: t.output, total_tokens: t.input + t.output });
@@ -280,7 +281,9 @@ export class Orchestrator {
     try {
       let failure: string | null = null;
       for (let turn = 1; ; turn++) {
-        const prompt = turn === 1 ? await renderPrompt(template, e.issue, e.attempt)
+        const prompt = turn === 1 ? await renderPrompt(template, cfg.tracker.kind === 'local'
+          ? { ...e.issue, description: compactDescription(e.issue.description) } : e.issue, e.attempt)
+          + (cfg.tracker.kind === 'local' ? `\n\n${handoffInstructions}` : '')
           : failure ? checksFailedPrompt(e.issue, failure, turn, cfg.agent.maxTurns)
           : continuationPrompt(e.issue, turn, cfg.agent.maxTurns);
         failure = null;
@@ -376,7 +379,7 @@ export class Orchestrator {
     this.totals.seconds += (Date.now() - e.startedAt) / 1000;
     const summary = { issue: e.identifier, provider: e.provider, model: e.model, turns: e.turns, tokens: e.tokens, seconds: Math.round((Date.now() - e.startedAt) / 1000) };
     const outcome = e.stop?.release ? 'stopped' : err || e.stop ? 'failed' : exhausted ? 'blocked' : 'finished';
-    this.recent.unshift({ identifier: e.identifier, url: e.issue.url, provider: e.provider, model: e.model, outcome, at: Date.now(), turns: e.turns, tokens: { ...e.tokens }, error: e.stop?.reason ?? (err ? errMsg(err) : null) });
+    this.recent.unshift({ events: e.events, workspace: e.workspace, identifier: e.identifier, url: e.issue.url, provider: e.provider, model: e.model, outcome, at: Date.now(), turns: e.turns, tokens: { ...e.tokens }, error: e.stop?.reason ?? (err ? errMsg(err) : null) });
     this.recent.length = Math.min(this.recent.length, 20);
 
     if (e.stop?.release) {
@@ -533,7 +536,7 @@ export class Orchestrator {
       counts: { running: this.running.size, retrying: this.retries.size, parked: this.parked.size },
       running: [...this.running].map(([id, e]) => this.runningRow(id, e)),
       retrying: [...this.retries].map(([id, r]) => this.retryRow(id, r)),
-      recent: this.recent.map((o) => ({ ...o, at: iso(o.at), tokens: tokens(o.tokens) })),
+      recent: this.recent.map(({ events, workspace, ...o }) => ({ ...o, at: iso(o.at), tokens: tokens(o.tokens) })),
       agent_totals: { ...tokens(this.totals), seconds_running: Math.round((this.totals.seconds + active) * 10) / 10, cost_usd: this.costComplete ? Math.round(this.totals.costUsd * 10000) / 10000 : null },
       rate_limits: this.rateLimits,
     };
@@ -549,13 +552,13 @@ export class Orchestrator {
       issue_identifier: identifier,
       issue_id: id ?? retry?.[0] ?? null,
       status: run ? 'running' : retry ? 'retrying' : 'idle',
-      workspace: { path: e?.workspace ?? null },
+      workspace: { path: e?.workspace ?? last?.workspace ?? null },
       attempts: { restart_count: this.recent.filter((o) => o.identifier === identifier).length, current_retry_attempt: e?.attempt ?? retry?.[1].attempt ?? null },
       running: run ? this.runningRow(id!, e!) : null,
       retry: retry ? this.retryRow(...retry) : null,
-      recent_events: (e?.events ?? []).map((x) => ({ ...x, at: iso(x.at) })).reverse(),
+      recent_events: [...(e?.events ?? []), ...this.recent.filter((o) => o.identifier === identifier).flatMap((o) => o.events)].sort((a, b) => b.at - a.at).slice(0, 100).map((x) => ({ ...x, at: iso(x.at) })),
       last_error: retry?.[1].error ?? last?.error ?? null,
-      history: this.recent.filter((o) => o.identifier === identifier).map((o) => ({ ...o, at: iso(o.at), tokens: tokens(o.tokens) })),
+      history: this.recent.filter((o) => o.identifier === identifier).map(({ events, workspace, ...o }) => ({ ...o, at: iso(o.at), tokens: tokens(o.tokens) })),
     };
   }
 

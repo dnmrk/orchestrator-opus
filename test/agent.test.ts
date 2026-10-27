@@ -5,7 +5,7 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmp, waitFor } from './helpers.ts';
-import { runTurn, summarizeCodex, type AgentEvent, type TurnOptions } from '../src/agent.ts';
+import { runTurn, summarize, summarizeCodex, type AgentEvent, type TurnOptions } from '../src/agent.ts';
 import { buildConfig } from '../src/workflow.ts';
 
 const PARENT = fileURLToPath(new URL('./fixtures/orphan-parent.mjs', import.meta.url));
@@ -44,7 +44,7 @@ test('Codex captures its thread, resumes explicitly, and reports usage without d
   assert.equal(events.find((e) => e.type === 'item.started')?.message, 'npm test');
   await runTurn({ ...options, sessionId: thread!, resume: true });
   await assert.rejects(runTurn({ ...options, sessionId: '', resume: true }), /without a thread ID/);
-  assert.equal(summarizeCodex({ type: 'item.completed', item: { type: 'file_change', changes: [{ path: 'src/a.ts' }] } }).message, 'src/a.ts');
+  assert.equal(summarizeCodex({ type: 'item.completed', item: { type: 'file_change', changes: [{ path: 'src/a.ts' }] } }).message, 'Updating files: src/a.ts');
 });
 
 test('Codex terminal failures, missing results/thread IDs, and nonzero exits reject', async () => {
@@ -68,4 +68,16 @@ test('Codex abort and timeout stop the process and cannot be treated as successf
   timed.cfg.turnTimeoutMs = 100;
   await assert.rejects(runTurn(timed), /turn_timeout/);
   await assert.rejects(runTurn(options), /ticket cancelled/);
+});
+
+test('Claude tool activity uses readable descriptions without dumping tool arguments', () => {
+  const summary = (name: string, input?: object) => summarize({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } }).message;
+  assert.equal(summary('Edit', { file_path: 'src/a.ts', old_string: 'secret' }), 'Editing src/a.ts');
+  assert.equal(summary('Write', { file_path: 'README.md' }), 'Writing README.md');
+  assert.equal(summary('Read'), 'Reading a file');
+  assert.equal(summary('Bash', { description: 'Run the test suite', command: 'secret' }), 'Run the test suite');
+  assert.equal(summary('Bash'), 'Running a shell command');
+  assert.equal(summary('Grep', { pattern: 'transition' }), 'Searching for transition');
+  assert.equal(summary('Glob', { pattern: '*.ts' }), 'Finding files matching *.ts');
+  assert.equal(summary('Task'), 'Using Task');
 });

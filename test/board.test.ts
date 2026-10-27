@@ -93,7 +93,7 @@ test('create, move, and comment write through the tracker', async () => {
     assert.equal((await post('/api/v1/tickets/DEV-10/state', { state: 'human review' })).status, 200);
     assert.match(file(), /^---\nstate: Human Review\n/);
     assert.equal((await post('/api/v1/tickets/DEV-10/comments', { text: 'Looks good' })).status, 200);
-    assert.match(file(), /## Comments\n\n### .+\n\nLooks good\n$/);
+    assert.match(file(), /## Comments\n\n### .+\n\nStatus changed from To Do to Human Review\.\n\n### .+\n\nLooks good\n$/);
   } finally {
     server.close();
     await orch.stop();

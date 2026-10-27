@@ -320,3 +320,29 @@ No console warnings/errors. Branch select now shares the same wrapper; its API/l
 Progressive CSS base-select enhancement themes option menus where supported; older browsers retain native pickers.
 Model remains an editable datalist field with matching field chrome. Safari/Firefox and branch field browser interaction
 were not exercised. No new logic/dependencies or API changes. Evidence: .impeccable/review/dropdowns-*.png.
+
+## Ticket activity and review feedback
+
+- [x] Record local status moves atomically in the existing comment thread, through both board and agent callers.
+- [x] Describe provider tool events in English; retain bounded recent activity after handoff and during rework.
+- [x] Preserve repeated comment sections and make older retained model activity available.
+- [x] Cover transitions, event summaries, completed activity and fresh review dispatch; document context/session behavior.
+
+Scope: local tracker, agent event summaries, orchestrator detail/history, dashboard, setup guide and focused tests. No new dependencies or session-resume policy changes. Status/comments remain in ticket files; streamed activity stays bounded in daemon memory.
+
+Validation: 77/77 tests passed and typecheck clean in symphony-ticket-review-comments container; git diff --check clean. Regression coverage includes board/agent status writes, no-op transitions, comment preservation, readable tool summaries, repeated comment headings, retained handoff activity, fresh session feedback and workspace reuse. Updated existing exact-body assertions for the new status entries.
+
+Limits: no real provider inference or visual browser smoke; no merge, push or deployment. Previously discarded streamed events cannot be recovered. Stream history is retained only in bounded daemon memory; Jira comment fetching remains unchanged.
+
+## Compact review context
+
+- [x] Ask local agents to post a concise, cumulative handoff in the existing ticket comment thread.
+- [x] Render local first-turn prompts with original requirements, latest handoff and all newer comments; preserve full history if no handoff exists.
+- [x] Keep ticket storage, dashboard history, fresh sessions and workspace reuse intact.
+- [x] Test parsing/fallback, both providers' review dispatch and persistence across daemon restart; update docs.
+
+Scope: small prompt helper, orchestrator first-turn caller, tests and setup guide. No session persistence, added model calls, dependencies or Jira behavior changes. Handoffs must carry unresolved feedback and requirement changes forward; do not truncate summaries or feedback.
+
+Validation: 83/83 tests and typecheck passed in the isolated task container. Covered newest-checkpoint selection, original requirements and all newer feedback, missing/empty/misplaced handoff fallback, CRLF/repeated sections, unchanged stored history, persisted tracker rereads and fresh daemon review dispatch for both Claude and Codex. Long-history test prompts shrink to less than one fifth of the original without an additional model call.
+
+Limits: local timestamped comments only; agents must write a cumulative handoff for compaction to apply. No real model runs or measured billing savings. No hard truncation of feedback or summaries. Full historical comments remain accessible in the ticket file/dashboard. Not merged, pushed or deployed.

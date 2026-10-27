@@ -109,7 +109,7 @@ test('created survives rewrites: recorded from birth time on first write, then k
   const [after] = await tracker.fetchIssuesByIds(['X-1']);
   assert.equal(after.created_at, before.created_at);
   assert.equal(readFileSync(join(dir, 'X-1.md'), 'utf8').match(/^created:/gm)!.length, 1);
-  assert.match(after.description!, /^Body\n\n## Comments\n\n### .+\n\nfirst$/);
+  assert.match(after.description!, /^Body\n\n## Comments\n\n### .+\n\nfirst\n\n### .+\n\nStatus changed from To Do to Done\.$/);
 });
 
 test('concurrent comments and a transition on one ticket all land', async () => {
@@ -151,4 +151,18 @@ test('lockFile: a dead holder is taken over, a live one is refused', async () =>
   await assert.rejects(lockFile(path), /held by pid/);
   await release();
   assert.ok(!existsSync(path));
+});
+
+test('status history persists with comments through review and rework without duplicate no-op moves', async () => {
+  const { tracker } = board(FILES);
+  await tracker.comment('ABC-1', 'Original feedback');
+  await tracker.transition('ABC-1', 'Human Review');
+  await tracker.transition('ABC-1', 'Human Review');
+  await tracker.comment('ABC-1', 'Please fix the edge case');
+  await tracker.transition('ABC-1', 'To Do');
+  const [ticket] = await tracker.fetchIssuesByIds(['ABC-1']);
+  assert.match(ticket.description!, /Original feedback/);
+  assert.match(ticket.description!, /Please fix the edge case/);
+  assert.equal(ticket.description!.match(/Status changed from To Do to Human Review/g)!.length, 1);
+  assert.match(ticket.description!, /### \d{4}-.+\n\nStatus changed from Human Review to To Do\./);
 });

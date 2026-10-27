@@ -273,3 +273,50 @@ Stopped the disposable service and removed its test container after verification
 Scope: README.md, docs/SETUP.md, package.json and this task log. Documentation only; no runtime behavior changes.
 
 Validation: relative Markdown files/anchors and code fences checked with Python; package files include the guide and AGENTS.md; git diff --check clean. Agent installation/sign-in instructions checked against official provider documentation. No runtime tests rerun for this documentation-only change.
+
+## Dashboard redesign — Linear-style workspace
+
+User requested Impeccable and confirmed balanced attention to board clarity, ticket details and activity.
+Used the official Impeccable skill from a temporary checkout; the visual brief is the existing Linear-style product UI.
+
+- [x] Inspect dashboard renderers, event handlers, server and board tests; retain API and tracker contracts.
+- [x] Redesign navigation, board, ticket details, creation form and activity with one shared visual vocabulary.
+- [x] Preserve system/light/dark themes, keyboard operation, filtering, drag/drop, hidden columns and ticket settings.
+- [x] Verify desktop/mobile renders, interactive workflows, full tests and typecheck in isolated symphony-dashboard container.
+
+Scope: src/dashboard.html, product/design context and this log. No framework or runtime dependency additions.
+Direction: daily-use operation; quiet cool neutrals, DM Sans, compact persistent navigation, distinct content/lanes,
+clear issue titles and restrained semantic color. Mobile moves navigation to the top and keeps board scrolling local.
+Main risks: layout clipping, theme contrast, tab/focus regressions and unsaved ticket settings during polling.
+
+### Dashboard redesign review and validation
+
+- 73/73 tests passed, including two new regression tests covering saved views, headings, roving tab focus and keyboard navigation.
+- TypeScript typecheck and git diff --check passed. All Node/npm commands ran in symphony-dashboard container.
+- Actual browser smoke against disposable local tickets: filter/no-match state, view click/Home navigation, issue creation with Codex/model,
+  agent save/dirty-state guard, comment posting, status transition, drag/drop, column hiding/restoring and light/dark theme switching passed.
+- Inspected desktop (1512px), mobile (390px) and narrow (320px); fixed 320px navigation overflow. No browser console errors observed.
+- Official Impeccable detector ran once: dark action-button contrast fixed; footer/native-dialog padding findings reviewed as false positives.
+- Independent Impeccable finish reviewer found faint enabled lane creation labels; removed opacity and used higher-contrast text.
+  Same five view captures recaptured and reviewer returned ship. Evidence: .impeccable/review/.
+- Impeccable launcher was initially unavailable; used its documented direct-context fallback and honored the user-pinned Linear direction.
+  No seed/decision-comp round was performed. Product and design context recorded in PRODUCT.md and DESIGN.md.
+
+Limits: populated activity tables were not visually exercised; real Jira/provider authentication and paid inference were not tested.
+Preview uses synthetic local tickets on http://127.0.0.1:4567, without starting orchestration. No push or merge.
+
+## Standardize dropdown fields
+
+- [x] Inspect every select/model field in creation and issue detail, including branch locking and agent-save handlers.
+- [x] Share field height, border, chevron, padding, focus, disabled and option-menu styling; wrap bare branch select.
+- [x] Align creation labels/model inputs and verify desktop/mobile, light/dark and field interactions.
+
+Scope: src/dashboard.html CSS and branch-field markup; no API, selection semantics or dependencies change.
+
+Dropdown verification: 73/73 tests and typecheck pass in symphony-dashboard container; git diff --check clean.
+Chrome desktop/dark and 390px mobile/light: selected values, provider-dependent model suggestions, dirty-agent
+status disabling, shared 36px control heights, visible focus, themed open menus and no dialog horizontal overflow.
+No console warnings/errors. Branch select now shares the same wrapper; its API/locking regression tests pass.
+Progressive CSS base-select enhancement themes option menus where supported; older browsers retain native pickers.
+Model remains an editable datalist field with matching field chrome. Safari/Firefox and branch field browser interaction
+were not exercised. No new logic/dependencies or API changes. Evidence: .impeccable/review/dropdowns-*.png.

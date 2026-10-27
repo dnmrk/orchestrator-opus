@@ -400,3 +400,15 @@ Validation: 13/13 project tests passed, typecheck and git diff --check clean. Al
 ## Local merge verification
 
 Rebased feat/open-dashboard onto current main before merging. Full suite: 86/86 tests passed; typecheck and git diff --check clean in the isolated symphony-open-dashboard container. Reviewed CLI routing, shared browser launcher, readiness/failure behavior, regression tests and documentation. Desktop browser launch remains untested; no global installation or remote push.
+
+
+## Remove stripping API startup notice
+
+- [x] Trace warning to the shared packaged launcher used by both executable aliases.
+- [x] Initialize the API with only its exact experimental notice filtered, restoring process.emitWarning in finally before loading application code.
+- [x] Cover source and node_modules installations, clean help stderr, restored warning handler and unrelated experimental/deprecation warnings.
+- [x] Run regression tests, full suite, typecheck and whitespace checks in the isolated container.
+
+Scope: bin/symphony.mjs, launcher regression test and task notes. No dependency, build step, CLI/config change or persistent warning suppression.
+
+Validation: 87/87 full-suite tests passed, 13/13 project lifecycle tests passed through the shipped launcher, typecheck and git diff --check clean in symphony-typescript-warning. Regression covers source and actual node_modules paths and confirms process.emitWarning is restored. No host Node/npm, global reinstall, merge or push. The API remains experimental; a future Node notice wording change would make the warning visible again rather than hide other warnings.

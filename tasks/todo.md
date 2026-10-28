@@ -523,8 +523,10 @@ Limits: Chrome with emulated viewports only; no physical touch device, screen re
 - [x] Reproduce DEV-8's bold “Decisions needed (see the report):” handoff with bullet questions.
 - [x] Support common decision-heading variants and top-level question bullets with nested explicit options; preserve canonical prompts.
 - [x] Keep non-timestamp markdown headings inside their comments and add regressions for the actual comment format.
-- [ ] Update agent guidance/docs, verify container checks, and test the real format in a disposable UI.
+- [x] Update agent guidance/docs, verify container checks, and test the real format in the live UI without writes.
 
 Scope: shared dashboard comment/decision parsers, existing handoff guidance, docs and tests. Do not invent answers or modify the user's ticket.
 
 Focused validation: 17/17 dashboard/board tests and typecheck passed in symphony-decision-formats. The actual DEV-8 file was inspected read-only; its existing comment is unchanged. Full-suite and live rendering verification follow before completion.
+
+Final validation: 100/100 full-suite tests and typecheck passed after rebasing. After the local merge, the actual running openIntake dashboard was reloaded read-only and DEV-8 displayed all three decision fields and Submit answers. No ticket text, status, answers or daemon process was changed. The installed Symphony package is a symlink to this checkout and the HTML is served per request, so a browser reload applies this UI fix. Options render only when explicit; open-ended topics use a type-only placeholder. The running daemon picks up new agent-prompt guidance at its next restart. No remote push.

@@ -619,7 +619,7 @@ function decisionForm(comment, index, comments) {
   if (comments.slice(index + 1).some((c) => c.text.startsWith(`## Decision answers\n\nDecision request: ${comment.at}\n`))) return '<p class="muted">Answers submitted in comments.</p>';
   return `<form class="composer decision-form" novalidate data-comment="${index}" data-request="${esc(JSON.stringify([comment.at, comment.text]))}">${questions.map((q, i) => `<fieldset><legend>${inline(q.question)} <span class="muted">(required)</span></legend>
     <div class="row">${q.options.map((option) => `<button class="btn decision-option" type="button" data-answer="${i}" data-value="${esc(option)}">${inline(option)}</button>`).join('')}</div>
-    <textarea data-answer="${i}" aria-label="${esc(q.question)}" placeholder="Choose an option above or type your answer…" required maxlength="4000" aria-describedby="decision-budget-${index} decision-error-${index}"></textarea></fieldset>`).join('')}
+    <textarea data-answer="${i}" aria-label="${esc(q.question)}" placeholder="${q.options.length ? 'Choose an option above or type your answer…' : 'Type your answer…'}" required maxlength="4000" aria-describedby="decision-budget-${index} decision-error-${index}"></textarea></fieldset>`).join('')}
     <p class="decision-budget muted" id="decision-budget-${index}"></p>
     <p class="decision-error" id="decision-error-${index}" role="alert" tabindex="-1" hidden></p>
     <button class="btn" type="submit">Submit answers</button></form>`;

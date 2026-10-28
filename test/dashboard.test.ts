@@ -225,6 +225,7 @@ test('DEV-8 handoff decision topics become separate answer fields without invent
   assert.equal((html.match(/<textarea /g) ?? []).length, 3);
   assert.match(html, /Submit answers/);
   assert.ok(!html.includes('decision-option'));
+  assert.match(html, /placeholder="Type your answer…"/);
 });
 
 test('decision heading variants support bullet questions with nested choices and stop before the next section', () => {

@@ -412,3 +412,108 @@ Rebased feat/open-dashboard onto current main before merging. Full suite: 86/86 
 Scope: bin/symphony.mjs, launcher regression test and task notes. No dependency, build step, CLI/config change or persistent warning suppression.
 
 Validation: 87/87 full-suite tests passed, 13/13 project lifecycle tests passed through the shipped launcher, typecheck and git diff --check clean in symphony-typescript-warning. Regression covers source and actual node_modules paths and confirms process.emitWarning is restored. No host Node/npm, global reinstall, merge or push. The API remains experimental; a future Node notice wording change would make the warning visible again rather than hide other warnings.
+
+
+## Shell detail, decision replies and status token usage
+
+- [x] Show shell command text alongside the readable description in agent activity.
+- [x] Render local comment `## Decisions` questions with selectable suggestions, editable answers and submission to comments; preserve drafts and retry errors.
+- [x] Persist cumulative reported local-ticket usage and include it in status history; append final turn usage after a mid-turn status move.
+- [x] Run regression tests, full suite, typecheck and whitespace checks.
+
+Scope: agent summaries, local tracker usage/header/history, worker turn accounting, dashboard comment controls, local agent instructions, documentation and tests. No new dependency or provider interaction mode.
+
+
+Validation: 94/94 tests passed, typecheck and git diff --check clean in the isolated symphony-ticket-feedback container. Covers selectable/custom decision answers, escaped markup, multiple questions, duplicate-submit protection and failed-request retry; cumulative local usage through restart/rework and the real tracker CLI; both providers' turn accounting and failures after reporting usage.
+
+Limits: no visual browser smoke or real provider calls. Decision controls and persistent status usage target the existing local comment board; Jira comment fetching/writes remain unchanged. Usage before tracking began and unreported partial turns cannot be reconstructed. No merge, push, deployment or live-ticket edits.
+
+## Impeccable UI audit — ticket feedback
+
+- [x] Load Impeccable context and audit playbook; preserve the existing Operate dashboard identity.
+- [x] Exercise actual Chrome UI with disposable local tickets: option selection by keyboard, editable answers, submission, answered state, polling, validation, rejected request/retry and status/token history.
+- [x] Check dark/light themes, contrast, keyboard focus order and widths 320/390/768/1280.
+- [x] Run the Impeccable mechanical detector once and verify both findings in context.
+- [x] Record findings and evidence; restore browser viewport. Audit only: no production-code edits.
+
+Skill: /Users/dnmrk/.claude/plugins/marketplaces/impeccable/.agents/skills/impeccable/SKILL.md
+Playbook: reference/audit.md. Context loaded PRODUCT.md and DESIGN.md; no context repair or design replacement.
+
+Implementation integrity verdict: the visual system is coherent with Symphony's existing task-oriented dashboard, but state preservation and error delivery are not ready to ship. Overall 14/20 (Good; address weak dimensions). Scores describe this scoped Chrome audit, not WCAG certification or a full performance benchmark.
+
+| Dimension | Score | Evidence |
+| --- | --- | --- |
+| Accessibility | 2/4 | Native labels/required validation and keyboard selection work; submission errors sit outside the modal and whitespace has no feedback. |
+| Performance | 3/4 | No added frontend dependency or build, existing polling remains; no load benchmark conducted. |
+| Theming | 4/4 | Sampled option text, legends, answer text and timestamps pass AA contrast in light/dark themes. |
+| Responsive | 3/4 | Dialog/content fit 320–1280px, long options wrap; short touch targets are only ~28px tall. |
+| Implementation integrity | 2/4 | Status moves and agent reset force a rerender that erases decision drafts; cumulative usage and saved replies work. |
+
+### Findings (2 P1, 3 P2; no P0/P3)
+
+1. **[P1] Decision drafts are erased by unrelated controls.**
+   Location: src/dashboard.html:491 (status move), :756 (agent Reset), :770 (agent save), :654 (panel rerender).
+   Category: Implementation integrity. Reproduced: type “Preserve this decision draft.”, edit Model, click Reset; the answer becomes empty. Independently reproduced by typing an answer and moving Human Review → Blocked / back. `renderPanel(true, true)` restores only the regular comment draft. Agent-save uses the same forced-render path (code-confirmed, not separately exercised).
+   Impact: users irretrievably lose typed work while using other ticket controls.
+   Recommendation: preserve decision values keyed by request/question across all rerenders, independently of agent settings; add regression coverage. Suggested command: `$impeccable harden`.
+
+2. **[P1] Submission errors are hidden behind the native modal.**
+   Location: src/dashboard.html:630, :357 (global toast), :419 (toast helper).
+   Category: Accessibility / Implementation integrity. Existing toast placement is reused by the new decision flow. A rejected multi-answer POST populated the error toast, but it is outside the open dialog. At phone width its rect was x=97.5,y=737.2,w=195,h=86.8; `elementFromPoint` at its center returned a dialog `.prose` element, not the toast. Thus the message is behind the modal top layer. Drafts and the retry button do survive the failure.
+   Impact: the submission appears to do nothing and the reason is concealed. Native modal inertness also makes out-of-dialog status messaging unsuitable; assistive-technology announcement was not directly tested (WCAG 4.1.3 risk).
+   Recommendation: render persistent error feedback inside the decision form/dialog with an appropriate live region. Suggested command: `$impeccable harden`.
+
+3. **[P2] Whitespace-only answers fail silently.**
+   Location: src/dashboard.html:618.
+   Category: Accessibility. Six answers containing spaces passed native required validation (`:invalid` count zero); trimmed empties caused an immediate return with no field error or focus guidance.
+   Impact: users cannot identify why Submit answers did nothing. Relevant standard: WCAG 3.3.1 Error Identification.
+   Recommendation: trim-aware field validation and a visible required/error message linked to the field. Suggested command: `$impeccable harden` / `$impeccable clarify`.
+
+4. **[P2] Per-field limits allow a submission the server must reject.**
+   Location: src/dashboard.html:600, :619; src/server.ts comments text limit (20,000).
+   Category: Implementation integrity. Six questions each accept 4,000 characters; 24,000 answer characters plus request/question scaffolding exceed the server's 20,000-character comment cap. Reproduced rejection, retained all six drafts, shortened answers, retried successfully, and verified the saved combined comment and answered marker.
+   Impact: users write valid-looking answers that cannot be submitted; without visible errors this is especially confusing.
+   Recommendation: account for the combined serialized comment length and show remaining capacity / actionable validation before POST. Suggested command: `$impeccable harden`.
+
+5. **[P2] Phone decision buttons are too short for comfortable touch.**
+   Location: src/dashboard.html:193, :201, :599, :601.
+   Category: Responsive design. At 390px, short option buttons measured 28.2px high; a wrapping long option was 46.4px. Submit uses the same base button geometry.
+   Impact: short targets are harder to tap accurately. They exceed WCAG AA's 24px minimum but miss the 44px enhanced/comfortable-touch target; do not classify this measurement alone as an AA failure.
+   Recommendation: increase option/submit targets at the mobile breakpoint while preserving desktop density. Suggested command: `$impeccable adapt`.
+
+### Positive checks and detector review
+
+- Empty answers invoke native validation and focus the missing answer. Enter on an option selects it and focuses the editable answer. Tab from the final answer reaches Submit answers.
+- Edited answers save in the existing comment thread. Answered prompts lose their submission controls. Multi-question submission and retry both save successfully after valid input.
+- A decision draft survived a real backend comment change and subsequent polling. Forced rerenders, rather than normal polling, cause finding 1.
+- Status moves Human Review → Blocked → Human Review each appended reported usage: 15,740 total (12,480 input, 3,260 output).
+- Dialog/client and scroll widths matched at 320, 390, 768 and 1280px; main content had no horizontal overflow, including long commands and wrapping options. Viewport emulation is layout evidence, not synthesized touch or physical-device testing.
+- Dark contrast: options 12.13:1, legends/answers 14.18:1, timestamps 4.61:1. Light: options 15.07:1, legends/answers 14.70:1, timestamps 4.91:1. Sampled foreground/background pairs only; not a whole-page contrast certification.
+- No captured Chrome console warnings/errors. Browser viewport restored after responsive checks.
+- Detector returned two `cramped-padding` warnings (exit 2). Both are false positives for the rendered target: `.sidebar-foot` has 14px top padding on desktop and removes its border on mobile; the dialog intentionally delegates padding to `.issue-top`, `.issue-main` and `.issue-side`. No padding changes recommended.
+
+Evidence: .preview/audit-desktop-light.png, .preview/audit-mobile-dark.png, .preview/audit-error.png. All data was generated solely for this disposable preview. The error screenshot is supporting context; DOM hit testing provides the decisive occlusion evidence.
+
+Recommended order: `$impeccable harden` (draft preservation and visible validation/errors), `$impeccable adapt` (mobile targets), `$impeccable polish` (final verification). These can be requested individually, together, or in another order; re-run `$impeccable audit` after fixes.
+
+Limits: no physical touch gestures, screen reader, Safari/Firefox, real model calls or live ticket edits. No test suite repeat: production code is unchanged, and the preceding implementation's 94/94 tests/typecheck passed. Changes remain unmerged/unpushed.
+
+## Fix UI audit findings
+
+- [x] Preserve decision drafts across status moves and agent reset/save, and prevent rerenders during submission.
+- [x] Add visible in-form errors, required-answer validation and combined reply-length feedback before POST.
+- [x] Raise decision touch targets to 44px on mobile/coarse-pointer layouts; keep the existing visual system.
+- [x] Add focused regressions, run container checks, retest the rendered error/retry and draft paths, and finish the Impeccable pass.
+
+Scope: dashboard decision controls and tests; retain existing server validation, local ticket storage and dependencies.
+
+
+Validation: 97/97 tests passed, typecheck and git diff --check clean in symphony-ticket-feedback. New tests cover blank/whitespace fields, exact 20,000-character serialized reply boundaries, retained draft/error state by request identity, disabled in-flight fields and duplicate submissions, and successful-form cleanup.
+
+Chrome retest closed all five audit findings: typed answers survive status move, agent Reset and agent Save; a controlled HTTP 503 shows a persistent focusable error inside the modal (DOM hit testing confirms it is above the backdrop) and keeps answers for retry; a delayed retry remains disabled through a concurrent status move and saves exactly one reply; six 4,000-character answers are rejected in the client with an accurate combined-limit message. Labels state that answers are required and linked feedback supplies validation guidance. UTF-8 CJK/Arabic/emoji drafts retain their text.
+
+At 320/390px all decision buttons measure at least 44px and answer inputs are 16px; at 768/1280px desktop density is preserved. No horizontal dialog/content overflow at any tested width. Coarse pointers also receive the larger controls through CSS; no physical touch test was available. Error-text contrast was additionally corrected without changing the global palette: measured 5.74:1 light and 8.02:1 dark using normalized computed sRGB colors. No unexpected console errors during the retest.
+
+Impeccable detector ran once for this fix pass and reported only the same two padding false positives explained in the audit above; no new warning. Final polish preserved existing typography, colors, layouts and server-side validation. Screenshots: .preview/fixed-inline-error.png and .preview/fixed-mobile-dark.png. Preview scripts and fixtures stay under untracked .preview, outside the product source.
+
+Limits: Chrome with emulated viewports only; no physical touch device, screen reader, Safari/Firefox or real provider run. Drafts remain scoped to the currently open ticket dialog, as documented; page reload/close does not persist them. No merge, push, deployment or live-ticket edits.

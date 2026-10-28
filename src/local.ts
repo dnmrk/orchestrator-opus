@@ -189,12 +189,31 @@ export class LocalTracker implements Tracker, TrackerTools {
     return `${body.trimEnd()}${heading}\n\n### ${new Date().toISOString()}\n\n${text.trim()}\n`;
   }
 
+  usageText(usage: { input: number; output: number } | undefined): string {
+    const valid = usage && [usage.input, usage.output].every((n) => Number.isSafeInteger(n) && n >= 0);
+    return valid ? `Reported tokens: ${usage.input + usage.output} total (${usage.input} input, ${usage.output} output).`
+      : 'Reported tokens: unavailable (no usage recorded yet).';
+  }
+
+  async recordUsage(identifier: string, usage: { input: number; output: number }, previousState: string): Promise<void> {
+    if (![usage.input, usage.output].every((n) => Number.isSafeInteger(n) && n >= 0)) throw new Error('invalid token usage');
+    await this.update(identifier, (t) => {
+      const previous = t.meta.token_usage ?? { input: 0, output: 0 };
+      if (![previous.input, previous.output].every((n) => Number.isSafeInteger(n) && n >= 0)) throw new Error('invalid stored token usage');
+      const total = { input: previous.input + usage.input, output: previous.output + usage.output };
+      t.doc.set('token_usage', total);
+      // Providers report final usage after the agent's transition command has already returned.
+      return this.serialize(t, norm(str(t.meta.state) ?? '') !== norm(previousState)
+        ? this.appendComment(t.body, `Usage after turn completed in ${str(t.meta.state)}. ${this.usageText(total)}`) : t.body);
+    });
+  }
+
   async transition(identifier: string, state: string): Promise<string> {
     await this.update(identifier, (t) => {
       const previous = str(t.meta.state);
       t.doc.set('state', state); // Document API keeps the user's comments and key order
       return this.serialize(t, previous && norm(previous) !== norm(state)
-        ? this.appendComment(t.body, `Status changed from ${previous} to ${state}.`) : t.body);
+        ? this.appendComment(t.body, `Status changed from ${previous} to ${state}.\n\n${this.usageText(t.meta.token_usage)}`) : t.body);
     });
     return state;
   }

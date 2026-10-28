@@ -487,3 +487,39 @@ for (const provider of ['claude', 'codex'] as const) test(`${provider} review af
     assert.match(tracker.issues.get('1')!.description!, /Old investigation/);
   } finally { await restarted.stop(); }
 });
+
+
+for (const provider of ['claude', 'codex'] as const) test(`${provider} records each turn's usage once, before refreshing state`, async () => {
+  const { tracker, orch, calls } = setup('', provider);
+  const reports: unknown[] = [];
+  Object.assign(tracker, { recordUsage: async (...args: unknown[]) => { reports.push(args); } });
+  tracker.issues.set('1', issue());
+  tracker.onRefresh = () => { if (calls().length >= 2) tracker.issues.get('1')!.state = 'Human Review'; };
+  try {
+    await orch.start();
+    await waitFor(() => orch.recent.length > 0);
+    assert.deepEqual(reports, [
+      ['ABC-1', { input: 10, output: 5 }, 'To Do'],
+      ['ABC-1', { input: 10, output: 5 }, 'To Do'],
+    ]);
+  } finally { await orch.stop(); }
+});
+
+
+for (const provider of ['claude', 'codex'] as const) test(`${provider} keeps reported usage when the CLI fails after reporting it`, async () => {
+  const { tracker, orch } = setup('', provider);
+  const reports: unknown[] = [];
+  Object.assign(tracker, { recordUsage: async (...args: unknown[]) => { reports.push(args); } });
+  tracker.issues.set('1', issue());
+  const envKey = provider === 'claude' ? 'FAKE_CLAUDE_FAIL' : 'FAKE_CODEX_MODE';
+  process.env[envKey] = provider === 'claude' ? '1' : 'nonzero';
+  try {
+    await orch.start();
+    await waitFor(() => orch.recent.length > 0);
+    assert.deepEqual(reports, [['ABC-1', { input: 10, output: 5 }, 'To Do']]);
+    assert.equal(orch.recent[0].outcome, 'failed');
+  } finally {
+    await orch.stop();
+    delete process.env[envKey];
+  }
+});

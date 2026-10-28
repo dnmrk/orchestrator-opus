@@ -81,7 +81,7 @@ test('ticket without a header gets one on transition', async () => {
 test('$SYMPHONY_TRACKER works unquoted from an agent shell and stays scoped', async () => {
   const { spawnSync } = await import('node:child_process');
   const { fileURLToPath } = await import('node:url');
-  const { dir } = board({ 'X-1.md': '---\nstate: To Do\ntitle: T\n---\n', 'X-2.md': '---\nstate: To Do\ntitle: T\n---\n' });
+  const { dir, tracker } = board({ 'X-1.md': '---\nstate: To Do\ntitle: T\n---\n', 'X-2.md': '---\nstate: To Do\ntitle: T\n---\n' });
   const workflow = join(dir, '..', 'WORKFLOW.md');
   writeFileSync(workflow, '---\ntracker: { kind: local }\n---\n');
   const env = {
@@ -92,7 +92,9 @@ test('$SYMPHONY_TRACKER works unquoted from an agent shell and stays scoped', as
     SYMPHONY_ISSUE_IDENTIFIER: 'X-1',
   };
   const run = (cmd: string) => spawnSync('bash', ['-c', cmd], { env, encoding: 'utf8' });
+  await tracker.recordUsage('X-1', { input: 10, output: 5 }, 'To Do');
   assert.equal(run('$SYMPHONY_TRACKER transition X-1 In Progress').status, 0);
+  assert.match(readFileSync(join(dir, 'X-1.md'), 'utf8'), /Reported tokens: 15 total \(10 input, 5 output\)/);
   assert.equal(run("printf 'multi\\nline' | $SYMPHONY_TRACKER comment X-1 -").status, 0);
   assert.match(readFileSync(join(dir, 'X-1.md'), 'utf8'), /state: In Progress[\s\S]*multi\nline\n$/);
   const denied = run('$SYMPHONY_TRACKER transition X-2 Done');
@@ -109,7 +111,7 @@ test('created survives rewrites: recorded from birth time on first write, then k
   const [after] = await tracker.fetchIssuesByIds(['X-1']);
   assert.equal(after.created_at, before.created_at);
   assert.equal(readFileSync(join(dir, 'X-1.md'), 'utf8').match(/^created:/gm)!.length, 1);
-  assert.match(after.description!, /^Body\n\n## Comments\n\n### .+\n\nfirst\n\n### .+\n\nStatus changed from To Do to Done\.$/);
+  assert.match(after.description!, /^Body\n\n## Comments\n\n### .+\n\nfirst\n\n### .+\n\nStatus changed from To Do to Done\.\n\nReported tokens: unavailable \(no usage recorded yet\)\.$/);
 });
 
 test('concurrent comments and a transition on one ticket all land', async () => {
@@ -165,4 +167,20 @@ test('status history persists with comments through review and rework without du
   assert.match(ticket.description!, /Please fix the edge case/);
   assert.equal(ticket.description!.match(/Status changed from To Do to Human Review/g)!.length, 1);
   assert.match(ticket.description!, /### \d{4}-.+\n\nStatus changed from Human Review to To Do\./);
+});
+
+
+test('status moves carry persisted cumulative usage, including a final report after agent handoff', async () => {
+  const { dir, tracker } = board(FILES);
+  await tracker.recordUsage('ABC-1', { input: 10, output: 5 }, 'To Do');
+  await tracker.transition('ABC-1', 'Human Review');
+  let text = readFileSync(join(dir, 'ABC-1.md'), 'utf8');
+  assert.match(text, /Status changed from To Do to Human Review\.\n\nReported tokens: 15 total \(10 input, 5 output\)\./);
+  await tracker.recordUsage('ABC-1', { input: 20, output: 7 }, 'To Do');
+  text = readFileSync(join(dir, 'ABC-1.md'), 'utf8');
+  assert.match(text, /Usage after turn completed in Human Review\. Reported tokens: 42 total \(30 input, 12 output\)\./);
+  const restarted = new LocalTracker(dir, ['Done']);
+  await restarted.transition('ABC-1', 'To Do');
+  assert.match(readFileSync(join(dir, 'ABC-1.md'), 'utf8'), /Status changed from Human Review to To Do\.\n\nReported tokens: 42 total/);
+  await assert.rejects(tracker.recordUsage('ABC-1', { input: -1, output: 0 }, 'To Do'), /invalid token/);
 });

@@ -45,6 +45,7 @@ export interface Tracker {
 /** Adapter-owned write tools exposed to the agent as `$SYMPHONY_TRACKER` (SPEC 11.5). */
 export interface TrackerTools {
   comment(identifier: string, text: string): Promise<void>;
+  recordUsage?(identifier: string, usage: { input: number; output: number }, previousState: string): Promise<void>;
   transition(identifier: string, state: string): Promise<string>;
   /** Board-only (local tracker): create a ticket, returns its identifier. */
   create?(ticket: NewTicket): Promise<string>;

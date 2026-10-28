@@ -70,12 +70,13 @@ test('Codex abort and timeout stop the process and cannot be treated as successf
   await assert.rejects(runTurn(options), /ticket cancelled/);
 });
 
-test('Claude tool activity uses readable descriptions without dumping tool arguments', () => {
+test('Claude activity includes shell commands and readable file descriptions', () => {
   const summary = (name: string, input?: object) => summarize({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } }).message;
   assert.equal(summary('Edit', { file_path: 'src/a.ts', old_string: 'secret' }), 'Editing src/a.ts');
   assert.equal(summary('Write', { file_path: 'README.md' }), 'Writing README.md');
   assert.equal(summary('Read'), 'Reading a file');
-  assert.equal(summary('Bash', { description: 'Run the test suite', command: 'secret' }), 'Run the test suite');
+  assert.equal(summary('Bash', { description: 'Run the test suite', command: 'npm test' }), 'Run the test suite:\nnpm test');
+  assert.equal(summary('Bash', { command: 'pwd' }), 'Running a shell command:\npwd');
   assert.equal(summary('Bash'), 'Running a shell command');
   assert.equal(summary('Grep', { pattern: 'transition' }), 'Searching for transition');
   assert.equal(summary('Glob', { pattern: '*.ts' }), 'Finding files matching *.ts');

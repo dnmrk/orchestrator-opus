@@ -288,6 +288,8 @@ export class Orchestrator {
           : continuationPrompt(e.issue, turn, cfg.agent.maxTurns);
         failure = null;
         e.turns = turn;
+        let usageReported = false;
+        const previousState = e.issue.state;
         const options = {
           cwd: ws.path,
           writableRoots,
@@ -296,12 +298,24 @@ export class Orchestrator {
           prompt,
           env: this.agentEnv(e.issue, ws.path),
           signal: e.abort.signal,
-          onEvent: (ev: AgentEvent) => this.onAgentEvent(e, ev),
+          onEvent: (ev: AgentEvent) => {
+            usageReported ||= ev.usage !== undefined;
+            this.onAgentEvent(e, ev);
+          },
         };
-        if (e.provider === 'codex') {
-          this.costComplete = false; // Codex reports tokens, not a billed USD total.
-          await runTurn({ ...options, provider: 'codex', cfg: { ...cfg.codex, model: e.model! } });
-        } else await runTurn({ ...options, cfg: { ...cfg.claude, model: e.model } });
+        const beforeUsage = { ...e.tokens };
+        try {
+          if (e.provider === 'codex') {
+            this.costComplete = false; // Codex reports tokens, not a billed USD total.
+            await runTurn({ ...options, provider: 'codex', cfg: { ...cfg.codex, model: e.model! } });
+          } else await runTurn({ ...options, cfg: { ...cfg.claude, model: e.model } });
+        } finally {
+          if (usageReported) {
+            await this.tracker.recordUsage?.(e.identifier, {
+              input: e.tokens.input - beforeUsage.input, output: e.tokens.output - beforeUsage.output,
+            }, previousState);
+          }
+        }
         const [fresh] = await this.tracker.fetchIssuesByIds([e.issue.id]);
         if (!fresh) return false;
         const prev = e.issue.state;

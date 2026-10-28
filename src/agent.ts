@@ -65,7 +65,10 @@ function toolSummary(part: any): string {
     case 'edit': case 'multiedit': return target ? `Editing ${target}` : 'Editing a file';
     case 'write': return target ? `Writing ${target}` : 'Writing a file';
     case 'read': return target ? `Reading ${target}` : 'Reading a file';
-    case 'bash': return typeof input.description === 'string' && input.description.trim() ? input.description : 'Running a shell command';
+    case 'bash': {
+      const description = typeof input.description === 'string' && input.description.trim() ? input.description.trim() : 'Running a shell command';
+      return typeof input.command === 'string' && input.command.trim() ? `${description}:\n${input.command.trim()}` : description;
+    }
     case 'grep': return typeof input.pattern === 'string' ? `Searching for ${input.pattern}` : 'Searching file contents';
     case 'glob': return typeof input.pattern === 'string' ? `Finding files matching ${input.pattern}` : 'Finding files';
     default: return `Using ${part.name ?? 'a tool'}`;

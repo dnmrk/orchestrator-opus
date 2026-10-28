@@ -305,3 +305,22 @@ Custom workflow prompts must include `{{ issue.description }}`.
 This reduces repeated history in prompts; actual token/cost savings depend on the model's work
 and caching. A missing or empty handoff keeps the full history. If a handoff omits an important
 decision, the next agent may need to inspect the full ticket file or relevant code.
+
+
+### Decision replies and status usage
+
+For a human decision, agents can post a separate local ticket comment like:
+
+```markdown
+## Decisions
+Which approach should we use?
+- Minimal fix
+- Broader refactor
+When should this ship?
+- This week
+- Next week
+```
+
+Each question is a plain line followed by optional bullet options. In the dashboard, choose an option or type/edit an answer, then use **Submit answers** to add a reply to the comment thread. Answers are read on the next active run; submission does not change the ticket status. Draft answers survive polling, status moves, agent reset/save, and failed requests while the ticket dialog remains open. Closing or reloading the page does not save a draft. Required answers and the combined 20,000-character reply limit are validated before submission; errors appear inside the form and keep your answers for retry.
+
+Local status comments include cumulative reported input/output/total tokens, persisted in the ticket header across restarts and rework. Providers report usage at turn completion, so a move during a turn shows the latest previously recorded usage (or unavailable). If the turn changes status, a follow-up usage comment records the completed turn's total. Historical usage from before tracking began cannot be recovered. Shell activity includes command text as well as any supplied description, within the existing activity length limit.

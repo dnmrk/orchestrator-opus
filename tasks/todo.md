@@ -517,3 +517,14 @@ At 320/390px all decision buttons measure at least 44px and answer inputs are 16
 Impeccable detector ran once for this fix pass and reported only the same two padding false positives explained in the audit above; no new warning. Final polish preserved existing typography, colors, layouts and server-side validation. Screenshots: .preview/fixed-inline-error.png and .preview/fixed-mobile-dark.png. Preview scripts and fixtures stay under untracked .preview, outside the product source.
 
 Limits: Chrome with emulated viewports only; no physical touch device, screen reader, Safari/Firefox or real provider run. Drafts remain scoped to the currently open ticket dialog, as documented; page reload/close does not persist them. No merge, push, deployment or live-ticket edits.
+
+## Recognize existing decision comments
+
+- [x] Reproduce DEV-8's bold “Decisions needed (see the report):” handoff with bullet questions.
+- [x] Support common decision-heading variants and top-level question bullets with nested explicit options; preserve canonical prompts.
+- [x] Keep non-timestamp markdown headings inside their comments and add regressions for the actual comment format.
+- [ ] Update agent guidance/docs, verify container checks, and test the real format in a disposable UI.
+
+Scope: shared dashboard comment/decision parsers, existing handoff guidance, docs and tests. Do not invent answers or modify the user's ticket.
+
+Focused validation: 17/17 dashboard/board tests and typecheck passed in symphony-decision-formats. The actual DEV-8 file was inspected read-only; its existing comment is unchanged. Full-suite and live rendering verification follow before completion.

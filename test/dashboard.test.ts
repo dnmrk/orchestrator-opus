@@ -208,3 +208,42 @@ test('decision drafts and errors restore by request identity across forced panel
   other.wire(drafts);
   assert.deepEqual(other.fields.map((field) => field.value), ['', '']);
 });
+
+test('DEV-8 handoff decision topics become separate answer fields without invented choices', () => {
+  const { context, splitComments } = dashboard();
+  const handoff = '## Handoff\n**Done:** Reviewed the UI.\n\n**Decisions needed (see the report):**\n- Tab and screen naming.\n- Whether to change the DESIGN.md Today order.\n- Follow-up scope: P1 fixes only (clarify, harden, adapt), or also a native-stack migration (shape).';
+  const description = `Requirements\n\n## Comments\n\n### 2026-10-28T16:38:51.445Z\n\n${handoff}\n\n### 2026-10-28T16:38:52.122Z\n\nStatus changed.`;
+  const comments = splitComments(description).comments;
+  assert.equal(comments.length, 2);
+  const questions = JSON.parse(JSON.stringify(context.decisionQuestions(comments[0].text)));
+  assert.deepEqual(questions, [
+    { question: 'Tab and screen naming.', options: [] },
+    { question: 'Whether to change the DESIGN.md Today order.', options: [] },
+    { question: 'Follow-up scope: P1 fixes only (clarify, harden, adapt), or also a native-stack migration (shape).', options: [] },
+  ]);
+  const html = context.decisionForm(comments[0], 0, comments);
+  assert.equal((html.match(/<textarea /g) ?? []).length, 3);
+  assert.match(html, /Submit answers/);
+  assert.ok(!html.includes('decision-option'));
+});
+
+test('decision heading variants support bullet questions with nested choices and stop before the next section', () => {
+  const { context } = dashboard();
+  for (const heading of ['## Decisions', '### Decisions needed', '**Decisions needed:**', '**Decisions needed**:', 'Decisions needed (see the report):']) {
+    const text = `${heading}\n- Which scope?\n  - P1 fixes only\n  - Include migration\n- Naming preference?\n  A. Keep names\n  B. Rename tabs\n\n**Next steps:**\n- This is not a decision`;
+    assert.deepEqual(JSON.parse(JSON.stringify(context.decisionQuestions(text.replaceAll('\n', '\r\n')))), [
+      { question: 'Which scope?', options: ['P1 fixes only', 'Include migration'] },
+      { question: 'Naming preference?', options: ['Keep names', 'Rename tabs'] },
+    ], heading);
+  }
+  assert.equal(context.decisionQuestions('**Decision answers:**\n- Not a request').length, 0);
+  assert.equal(context.decisionQuestions('We have decisions needed later.\n- Not a request').length, 0);
+});
+
+test('markdown subheadings stay inside timestamped comments, including a Decisions heading', () => {
+  const { splitComments, context } = dashboard();
+  const parsed = splitComments('Requirements\n\n## Comments\n\n### 2026-10-29T00:00:00Z\n\n### Decisions needed\n- Choose scope\n  - Minimal\n  - Broad\n\n### Notes\nKeep this with the same comment.');
+  assert.equal(parsed.comments.length, 1);
+  assert.match(parsed.comments[0].text, /### Notes/);
+  assert.equal(context.decisionQuestions(parsed.comments[0].text)[0].options.length, 2);
+});

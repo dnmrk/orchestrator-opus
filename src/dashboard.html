@@ -42,7 +42,6 @@
   input::placeholder, textarea::placeholder { color: var(--text-3); opacity: 1; }
   button:disabled, .agent-model:disabled { opacity: .55; cursor: not-allowed; }
   .sidebar { flex: 0 0 216px; display: flex; flex-direction: column; gap: 28px; padding: 24px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--line); }
-  .sidebar[hidden] { display: none; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 16px; font-weight: 700; letter-spacing: -.025em; }
   .brand svg { color: var(--accent); }
   .workspace { padding: 0 8px; min-width: 0; }
@@ -50,7 +49,18 @@
   .project { overflow-wrap: anywhere; }
   .navigation { display: flex; flex-direction: column; gap: 4px; }
   .nav-count { margin-left: auto; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .sidebar-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 14px 8px 0; border-top: 1px solid var(--line); color: var(--text-3); font-size: 11px; }
+  .sidebar-foot { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 8px 0; border-top: 1px solid var(--line); color: var(--text-3); font-size: 11px; }
+  .sidebar-toggle { flex-shrink: 0; }
+  .sidebar-toggle[aria-expanded="false"] svg { transform: rotate(180deg); }
+  .sidebar[data-collapsed="true"] { flex-basis: 56px; padding-inline: 8px; }
+  .sidebar[data-collapsed="true"] .sidebar-label,
+  .sidebar[data-collapsed="true"] .workspace,
+  .sidebar[data-collapsed="true"] .nav-count,
+  .sidebar[data-collapsed="true"] .sidebar-foot > span { display: none; }
+  .sidebar[data-collapsed="true"] .brand { justify-content: center; padding: 0; }
+  .sidebar[data-collapsed="true"] .brand svg { display: block; }
+  .sidebar[data-collapsed="true"] .tab { justify-content: center; width: 100%; height: 40px; padding: 10px; }
+  .sidebar[data-collapsed="true"] .sidebar-foot { justify-content: center; padding-inline: 0; }
   kbd { font: inherit; border: 1px solid var(--card-line); border-radius: 4px; padding: 1px 4px; }
   .app { display: flex; flex-direction: column; flex: 1; min-width: 0; }
   .page-title { margin: 0; font-size: 21px; font-weight: 600; letter-spacing: -.025em; }
@@ -146,14 +156,20 @@
   .issue-top { display: flex; align-items: center; gap: 8px; height: 48px; flex-shrink: 0; padding: 0 12px 0 24px; border-bottom: 1px solid var(--line); color: var(--text-2); }
   .issue-top .key { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .issue-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
-  .issue-grid.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
-  .issue-grid.sidebar-hidden .issue-side { display: none; }
+  .issue-grid.sidebar-collapsed { grid-template-columns: minmax(0, 1fr) 75px; }
+  .issue-grid.sidebar-collapsed .issue-side { align-items: center; padding-inline: 12px; }
+  .issue-grid.sidebar-collapsed .issue-side > div { border: 0; padding: 0; }
+  .issue-grid.sidebar-collapsed .issue-side > div > :not(.side-title),
+  .issue-grid.sidebar-collapsed .side-title-label,
+  .issue-grid.sidebar-collapsed #p-sidebar-toggle-label { display: none; }
+  .issue-sidebar-toggle { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+  .issue-sidebar-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
   .issue-main { overflow-y: auto; padding: 40px 48px 48px; display: flex; flex-direction: column; gap: 28px; }
   .issue-main > * { width: 100%; max-width: 720px; }
   .issue-main h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; overflow-wrap: anywhere; }
   .issue-side > div + div { border-top: 1px solid var(--line); padding-top: 22px; }
   .issue-side { overflow-y: auto; border-left: 1px solid var(--line); background: var(--lane); padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 22px; }
-  .side-title { margin: 0 0 10px; color: var(--text-2); font-weight: 500; }
+  .side-title { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; color: var(--text-2); font-weight: 500; }
   .label .count { color: var(--text-3); font-weight: 400; margin-left: 4px; }
   .attrs { display: grid; grid-template-columns: 88px 1fr; gap: 10px 12px; align-items: center; margin: 0; }
   .attrs dt { color: var(--text-2); }
@@ -244,13 +260,18 @@
   @media (max-width: 1000px) { .sidebar { flex-basis: 184px; padding-inline: 12px; } .head, .bar { padding-left: 24px; padding-right: 24px; } .board { padding-inline: 24px; } }
   @media (max-width: 720px) {
     body { flex-direction: column; }
-    .sidebar { flex: none; flex-direction: row; align-items: center; gap: 16px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
+    .sidebar { flex: none; flex-direction: row; align-items: center; gap: 8px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--line); }
     .brand { padding: 0; font-size: 14px; }
+    .brand .sidebar-label { display: none; }
     .workspace { display: none; }
     .navigation { flex-direction: row; margin-left: auto; }
     .tab { width: auto; padding: 9px; gap: 6px; }
     .nav-count, .sidebar-foot > span { display: none; }
-    .sidebar-foot { margin: 0; border: 0; padding: 0; }
+    .sidebar-foot { margin: 0; border: 0; padding: 0; flex-wrap: nowrap; }
+    .sidebar-toggle { width: 40px; height: 40px; justify-content: center; padding: 12px; }
+    .sidebar-toggle .sidebar-label { display: none; }
+    .sidebar[data-collapsed="true"] { flex-basis: auto; padding-inline: 16px; }
+    .sidebar[data-collapsed="true"] .tab { width: 40px; }
     .app { min-height: 0; }
     .head { min-height: 0; flex-wrap: wrap; padding-top: 20px; padding-bottom: 18px; }
     .head > .heading { flex: 1 1 calc(100% - 140px); }
@@ -275,6 +296,8 @@
     .issue-main, .issue-side { overflow: visible; }
     .issue-main { padding: 22px 16px 28px; }
     .issue-side { border-left: 0; border-top: 1px solid var(--line); padding: 18px 16px 28px; }
+    .issue-grid.sidebar-collapsed .issue-side { flex-direction: row; }
+    .issue-grid.sidebar-collapsed .side-title { margin: 0; }
   }
   @media (max-width: 720px), (pointer: coarse) {
     .decision-form .btn { min-height: 44px; }
@@ -294,17 +317,19 @@
 </head>
 <body>
 <aside class="sidebar" id="workspace-sidebar" aria-label="Workspace">
-  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 15V9m4 10V5m4 16V3m4 16V5m4 10V9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Symphony</div>
+  <div class="brand" aria-label="Symphony"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 15V9m4 10V5m4 16V3m4 16V5m4 10V9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="sidebar-label">Symphony</span></div>
   <div class="workspace"><span>Workspace</span><div class="project" id="project">Symphony</div></div>
   <nav class="navigation" role="tablist" aria-label="View" aria-orientation="vertical">
-    <button class="tab" role="tab" id="tab-board" aria-selected="true" aria-controls="board"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M6 3v10m4-10v10" stroke="currentColor" stroke-width="1.3"/></svg>Issues<span class="nav-count" id="issue-count"></span></button>
-    <button class="tab" role="tab" id="tab-activity" aria-selected="false" aria-controls="activity" tabindex="-1"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8h3l2-5 3 10 2-5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Activity<span class="nav-count" id="running-count"></span></button>
+    <button class="tab" role="tab" id="tab-board" aria-label="Issues" title="Issues" aria-selected="true" aria-controls="board"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M6 3v10m4-10v10" stroke="currentColor" stroke-width="1.3"/></svg><span class="sidebar-label">Issues</span><span class="nav-count" id="issue-count"></span></button>
+    <button class="tab" role="tab" id="tab-activity" aria-label="Activity" title="Activity" aria-selected="false" aria-controls="activity" tabindex="-1"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8h3l2-5 3 10 2-5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sidebar-label">Activity</span><span class="nav-count" id="running-count"></span></button>
   </nav>
-  <div class="sidebar-foot"><span><kbd>C</kbd> to create an issue</span><span class="spacer"></span><button class="icon-btn" id="theme" type="button" aria-label="Theme: system" title="Theme: system"></button></div>
+  <div class="sidebar-foot">
+    <button class="tab sidebar-toggle" id="toggle-workspace-sidebar" type="button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-controls="workspace-sidebar" aria-expanded="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 4 6 8l4 4M6 4 2 8l4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sidebar-label" id="sidebar-toggle-label">Collapse sidebar</span></button>
+    <span><kbd>C</kbd> to create an issue</span><span class="spacer"></span><button class="icon-btn" id="theme" type="button" aria-label="Theme: system" title="Theme: system"></button>
+  </div>
 </aside>
 <main class="app">
 <header class="head">
-  <button class="btn" id="toggle-workspace-sidebar" type="button" aria-controls="workspace-sidebar" aria-expanded="true">Hide sidebar</button>
   <div class="heading"><h1 class="page-title" id="view-title">Issues</h1><p class="page-description" id="view-description">A clear path from the next task to done.</p></div>
   <span class="spacer"></span>
   <span class="agents" id="agents" role="status"><i aria-hidden="true"></i><span id="agents-text">Connecting</span></span>
@@ -336,7 +361,6 @@
   <div class="issue-top">
     <span id="p-crumb"></span>
     <span class="spacer"></span>
-    <button class="btn" id="p-toggle-sidebar" type="button" aria-controls="p-sidebar" aria-expanded="true">Hide sidebar</button>
     <button class="icon-btn" id="p-close" type="button" aria-label="Close issue">
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
@@ -383,9 +407,13 @@ const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)
 let board = null, state = null, selected = null, detail = null, dragging = false, filter = '';
 $('toggle-workspace-sidebar').addEventListener('click', () => {
   const sidebar = $('workspace-sidebar');
-  sidebar.hidden = !sidebar.hidden;
-  $('toggle-workspace-sidebar').textContent = sidebar.hidden ? 'Show sidebar' : 'Hide sidebar';
-  $('toggle-workspace-sidebar').setAttribute('aria-expanded', String(!sidebar.hidden));
+  const collapsed = sidebar.dataset.collapsed !== 'true';
+  sidebar.dataset.collapsed = String(collapsed);
+  const label = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  $('sidebar-toggle-label').textContent = label;
+  $('toggle-workspace-sidebar').setAttribute('aria-expanded', String(!collapsed));
+  $('toggle-workspace-sidebar').setAttribute('aria-label', label);
+  $('toggle-workspace-sidebar').title = label;
 });
 let shown = new Set(store.get('symphony-shown', []));    // hidden columns the user chose to show
 let hidden = new Set(store.get('symphony-hidden', []));  // visible columns the user chose to hide
@@ -737,11 +765,14 @@ async function openPanel(identifier) {
   renderPanel(true);
 }
 function closePanel() { if ($('issue').open) $('issue').close(); }
-$('p-toggle-sidebar').addEventListener('click', () => {
-  const hidden = $('p-body').classList.toggle('sidebar-hidden');
-  $('p-toggle-sidebar').textContent = hidden ? 'Show sidebar' : 'Hide sidebar';
-  $('p-toggle-sidebar').setAttribute('aria-expanded', String(!hidden));
-});
+function toggleTicketSidebar() {
+  const collapsed = $('p-body').classList.toggle('sidebar-collapsed');
+  const label = collapsed ? 'Expand ticket sidebar' : 'Collapse ticket sidebar';
+  $('p-sidebar-toggle-label').textContent = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  $('p-toggle-sidebar').setAttribute('aria-expanded', String(!collapsed));
+  $('p-toggle-sidebar').setAttribute('aria-label', label);
+  $('p-toggle-sidebar').title = label;
+}
 // Esc, ×, backdrop click and closePanel() all end here.
 $('issue').addEventListener('close', () => { selected = null; renderBoard(); });
 $('issue').addEventListener('click', (ev) => { if (ev.target === $('issue')) closePanel(); });
@@ -760,6 +791,7 @@ function renderPanel(keepDraft = false, force = false) {
   const draft = keepDraft ? $('p-comment')?.value ?? '' : '';
   const hadFocus = document.activeElement?.id === 'p-comment';
   const activityOpen = keepDraft && $('p-agent-activity')?.open;
+  const sidebarCollapsed = $('p-body').classList.contains('sidebar-collapsed');
   const { body, comments } = splitComments(t.description);
   const a = t.agent;
   const note = !a ? '' :
@@ -791,8 +823,9 @@ function renderPanel(keepDraft = false, force = false) {
       </section>
     </div>
     <aside class="issue-side" id="p-sidebar" aria-label="Properties">
+      <button class="btn issue-sidebar-toggle" id="p-toggle-sidebar" type="button" aria-controls="p-sidebar" aria-expanded="${!sidebarCollapsed}" aria-label="${sidebarCollapsed ? 'Expand' : 'Collapse'} ticket sidebar" title="${sidebarCollapsed ? 'Expand' : 'Collapse'} ticket sidebar"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 4 6 8l4 4M6 4 2 8l4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="p-sidebar-toggle-label">${sidebarCollapsed ? 'Expand' : 'Collapse'} sidebar</span></button>
       <div>
-        <p class="side-title">Properties</p>
+        <p class="side-title" title="Properties"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3v10M8 3v10M13 3v10M1 6h4M6 10h4M11 5h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span class="side-title-label">Properties</span></p>
         <dl class="attrs">
           <dt>Status</dt><dd><span class="select">${statusIcon(t.state)}<select id="p-state" aria-label="Status">${allStates().map((c) => `<option${norm(c) === norm(t.state) ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></span></dd>
           ${board.branches ? `<dt>Base branch</dt><dd><span class="select"><select id="p-base" aria-label="Base branch" ${t.base_locked ? 'disabled' : ''}>${[...new Set([t.base_branch ?? board.default_base_branch, ...board.branches])].map((b) => `<option value="${esc(b)}"${b === (t.base_branch ?? board.default_base_branch) ? ' selected' : ''}>${esc(b)}</option>`).join('')}</select></span>${t.base_locked ? '<span class="muted">Fixed for this ticket</span>' : ''}</dd>` : ''}
@@ -802,7 +835,7 @@ function renderPanel(keepDraft = false, force = false) {
         </dl>
       </div>
       <div>
-        <p class="side-title">Agent</p>
+        <p class="side-title" title="Agent"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="5" width="12" height="9" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M8 2v3M5 9h0M11 9h0M6 12h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span class="side-title-label">Agent</span></p>
         ${board.can_set_agent ? `<form id="p-agent-form"><fieldset id="p-agent-fields" class="agent-settings">
           <label>Coding agent <span class="select"><select id="p-provider" aria-label="Coding agent"><option value=""${!t.agent_provider ? ' selected' : ''}>Default (${providerName(board.default_provider)})</option>${['claude', 'codex'].map((p) => `<option value="${p}"${t.agent_provider === p ? ' selected' : ''}>${providerName(p)}</option>`).join('')}</select></span></label>
           <label>Model <input class="agent-model" id="p-model" aria-label="Model" maxlength="200" autocomplete="off" list="p-models" value="${esc(t.agent_model ?? '')}" placeholder="${esc(board.default_models[t.effective_provider] ?? 'CLI default')}"></label>
@@ -818,7 +851,7 @@ function renderPanel(keepDraft = false, force = false) {
         </dl>
       </div>
       <div>
-        <p class="side-title">Details</p>
+        <p class="side-title" title="Details"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"/><path d="M8 7v4M8 4.5h0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg><span class="side-title-label">Details</span></p>
         <dl class="attrs">
           <dt>Created</dt><dd>${esc(when(t.created_at))}</dd>
           <dt>Updated</dt><dd>${esc(when(t.updated_at))}</dd>
@@ -827,6 +860,7 @@ function renderPanel(keepDraft = false, force = false) {
       </div>
     </aside>`;
   $('p-comment').value = draft;
+  $('p-toggle-sidebar').addEventListener('click', toggleTicketSidebar);
   if (hadFocus) $('p-comment').focus();
   $('p-base')?.addEventListener('change', async (ev) => {
     const select = ev.target;

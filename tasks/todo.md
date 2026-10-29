@@ -586,3 +586,12 @@ Validation: 19/19 dashboard/board tests and typecheck passed in symphony-ticket-
 - [x] Verify workspace toggle and dashboard/board regressions plus typecheck in an isolated container.
 
 Validation: 20/20 dashboard/board tests and typecheck passed in symphony-workspace-sidebar-toggle. Browser discovery returned no user tabs and local-file preview was blocked by browser URL policy; no visual check or full-suite run. Local commit and merge authorized; no remote push.
+
+## Sidebar icon rail
+
+- [x] Replace full hiding with a 56px rail (about 25% of 216px), using the Shopware Admin interaction pattern.
+- [x] Move the toggle inside the sidebar; retain navigation icons, accessible names, focus, selection and theme control.
+- [x] Apply the same pattern to ticket details: a 75px section-icon rail with its own internal toggle and preserved drafts.
+- [x] Verify desktop/mobile rendering, toggle regressions and typecheck in the isolated task container.
+
+Validation: 104/104 tests and typecheck passed in symphony-sidebar-toggle-placement. Chrome verified expanded/collapsed states at desktop and 390px mobile in light/dark themes, measured 56px/75px desktop rails, checked internal controls, navigation, keyboard expansion, and preserved comment/model drafts. The preview uses isolated sample tickets; no live ticket writes. Applied Impeccable's published Operate/craft-floor guidance using its documented launcher-unavailable fallback. Local commit and merge authorized; no remote push.

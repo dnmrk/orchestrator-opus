@@ -9,7 +9,7 @@ function dashboard(savedTab = 'board') {
   const stored = new Map([['symphony-tab', JSON.stringify(savedTab)]]);
   const element = (id: string): any => {
     if (!elements.has(id)) elements.set(id, {
-      hidden: false, attributes: {}, listeners: {}, classList: { contains: () => false },
+      hidden: false, dataset: {}, attributes: {}, listeners: {}, classList: { contains: () => false },
       setAttribute(name: string, value: string) { this.attributes[name] = value; },
       addEventListener(name: string, callback: Function) { this.listeners[name] = callback; },
       focus() { document.activeElement = this; },
@@ -60,24 +60,29 @@ test('dashboard keyboard navigation selects and focuses tabs without interceptin
   assert.equal(prevented, 3);
 });
 
-test('workspace sidebar can be hidden and shown from the main header', () => {
+test('workspace sidebar collapses to a usable icon rail and expands from its own toggle', () => {
   const { element } = dashboard();
   const sidebar = element('workspace-sidebar');
   const button = element('toggle-workspace-sidebar');
   button.listeners.click();
-  assert.equal(sidebar.hidden, true);
-  assert.equal(button.textContent, 'Show sidebar');
+  assert.equal(sidebar.hidden, false);
+  assert.equal(sidebar.dataset.collapsed, 'true');
+  assert.equal(element('sidebar-toggle-label').textContent, 'Expand sidebar');
+  assert.equal(button.attributes['aria-label'], 'Expand sidebar');
   assert.equal(button.attributes['aria-expanded'], 'false');
   element('tab-activity').listeners.click();
-  assert.equal(sidebar.hidden, true);
+  assert.equal(sidebar.dataset.collapsed, 'true');
+  assert.equal(element('tab-activity').attributes['aria-selected'], 'true');
   button.listeners.click();
   assert.equal(sidebar.hidden, false);
-  assert.equal(button.textContent, 'Hide sidebar');
+  assert.equal(sidebar.dataset.collapsed, 'false');
+  assert.equal(element('sidebar-toggle-label').textContent, 'Collapse sidebar');
+  assert.equal(button.attributes['aria-label'], 'Collapse sidebar');
   assert.equal(button.attributes['aria-expanded'], 'true');
 });
 
-test('ticket sidebar toggles visibility and accessible state without replacing content or drafts', () => {
-  const { element } = dashboard();
+test('ticket sidebar collapses to a rail without replacing content or drafts', () => {
+  const { element, context } = dashboard();
   const classes = new Set<string>();
   const body = element('p-body');
   body.classList.toggle = (name: string) => {
@@ -88,13 +93,13 @@ test('ticket sidebar toggles visibility and accessible state without replacing c
   body.innerHTML = 'Ticket content';
   element('p-comment').value = 'Unsaved comment';
   const button = element('p-toggle-sidebar');
-  button.listeners.click();
-  assert.equal(classes.has('sidebar-hidden'), true);
-  assert.equal(button.textContent, 'Show sidebar');
+  context.toggleTicketSidebar();
+  assert.equal(classes.has('sidebar-collapsed'), true);
+  assert.equal(button.attributes['aria-label'], 'Expand ticket sidebar');
   assert.equal(button.attributes['aria-expanded'], 'false');
-  button.listeners.click();
-  assert.equal(classes.has('sidebar-hidden'), false);
-  assert.equal(button.textContent, 'Hide sidebar');
+  context.toggleTicketSidebar();
+  assert.equal(classes.has('sidebar-collapsed'), false);
+  assert.equal(button.attributes['aria-label'], 'Collapse ticket sidebar');
   assert.equal(button.attributes['aria-expanded'], 'true');
   assert.equal(body.innerHTML, 'Ticket content');
   assert.equal(element('p-comment').value, 'Unsaved comment');
@@ -143,6 +148,12 @@ test('ticket comments render newest first and preserve decision answer matching 
   element('p-agent-activity').open = true;
   runInNewContext('renderPanel()', context);
   assert.match(element('p-body').innerHTML, /<details id="p-agent-activity">/);
+  element('p-body').classList.contains = (name: string) => name === 'sidebar-collapsed';
+  runInNewContext('renderPanel(true, true)', context);
+  const collapsed = element('p-body').innerHTML;
+  assert.match(collapsed, /<aside[^>]*id="p-sidebar"[^>]*>\s*<button[^>]*id="p-toggle-sidebar"[^>]*aria-expanded="false"/);
+  assert.match(collapsed, /Expand ticket sidebar/);
+  assert.equal(typeof element('p-toggle-sidebar').listeners.click, 'function');
 });
 
 test('decision requests parse multiple questions, stop at the next section, and escape option markup', () => {

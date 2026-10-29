@@ -538,3 +538,11 @@ Final validation: 100/100 full-suite tests and typecheck passed after rebasing. 
 - [x] Run dashboard tests, full suite and typecheck in the isolated container.
 
 Validation: 101/101 tests and typecheck passed in symphony-latest-comments. Local merge to main authorized; no visual browser check or remote push.
+
+## Preserve full agent activity messages
+
+- [x] Trace truncation through agent summaries, orchestrator retention, API and dashboard rendering.
+- [x] Preserve full Claude assistant/result and Codex message text; keep diagnostic and file-change summaries bounded.
+- [x] Verify long-message regressions, full suite and typecheck in the isolated container.
+
+Validation: reproduced the 500-character cutoff with a failing regression, then passed 102/102 tests and typecheck in symphony-full-activity-text. Local commit and merge to main authorized; no browser check, remote push or live daemon restart. Previously truncated in-memory activity cannot be reconstructed; full messages increase retained activity size, with existing event-count limits unchanged.

@@ -70,6 +70,13 @@ test('Codex abort and timeout stop the process and cannot be treated as successf
   await assert.rejects(runTurn(options), /ticket cancelled/);
 });
 
+test('Claude and Codex activity preserve complete messages longer than 500 characters', () => {
+  const text = 'Research notes with **formatting** and `code`.\n'.repeat(40) + 'Final recommendation: keep the full answer. 🦄';
+  assert.equal(summarizeCodex({ type: 'item.completed', item: { type: 'agent_message', text } }).message, text);
+  assert.equal(summarize({ type: 'assistant', message: { content: [{ type: 'text', text }, { type: 'text', text: 'Next steps.' }] } }).message, `${text} Next steps.`);
+  assert.equal(summarize({ type: 'result', subtype: 'success', result: text }).message, text);
+});
+
 test('Claude activity includes shell commands and readable file descriptions', () => {
   const summary = (name: string, input?: object) => summarize({ type: 'assistant', message: { content: [{ type: 'tool_use', name, input }] } }).message;
   assert.equal(summary('Edit', { file_path: 'src/a.ts', old_string: 'secret' }), 'Editing src/a.ts');

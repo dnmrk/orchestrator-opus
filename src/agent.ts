@@ -51,7 +51,7 @@ export function summarizeCodex(ev: any, at = Date.now()): AgentEvent {
     event.usage = { input: ev.usage?.input_tokens ?? 0, output: ev.usage?.output_tokens ?? 0 };
   }
   const message = ev.item?.text ?? ev.item?.command ?? ev.error?.message ?? ev.message;
-  if (typeof message === 'string') event.message = message.slice(0, 500);
+  if (typeof message === 'string') event.message = message;
   if (ev.item?.type === 'file_change' && Array.isArray(ev.item.changes)) {
     event.message = 'Updating files: ' + ev.item.changes.map((c: any) => c?.path).filter(Boolean).join(', ').slice(0, 500);
   }
@@ -82,7 +82,7 @@ export function summarize(ev: any, at = Date.now()): AgentEvent {
     return {
       type,
       at,
-      message: String(ev.result ?? '').slice(0, 500),
+      message: String(ev.result ?? ''),
       usage: {
         input: (ev.usage?.input_tokens ?? 0) + (ev.usage?.cache_read_input_tokens ?? 0) + (ev.usage?.cache_creation_input_tokens ?? 0),
         output: ev.usage?.output_tokens ?? 0,
@@ -93,10 +93,9 @@ export function summarize(ev: any, at = Date.now()): AgentEvent {
   if (ev.type === 'rate_limit_event') return { type, at, rateLimits: ev.rate_limit_info ?? ev };
   const parts = Array.isArray(ev.message?.content) ? ev.message.content : [];
   const message = parts
-    .map((p: any) => (p.type === 'text' ? p.text : p.type === 'tool_use' ? toolSummary(p) : ''))
+    .map((p: any) => (p.type === 'text' ? p.text : p.type === 'tool_use' ? toolSummary(p).slice(0, 500) : ''))
     .filter(Boolean)
-    .join(' ')
-    .slice(0, 500);
+    .join(' ');
   return { type, at, message: message || undefined };
 }
 

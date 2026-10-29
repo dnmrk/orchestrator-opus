@@ -60,6 +60,30 @@ test('dashboard keyboard navigation selects and focuses tabs without interceptin
   assert.equal(prevented, 3);
 });
 
+test('ticket sidebar toggles visibility and accessible state without replacing content or drafts', () => {
+  const { element } = dashboard();
+  const classes = new Set<string>();
+  const body = element('p-body');
+  body.classList.toggle = (name: string) => {
+    if (classes.delete(name)) return false;
+    classes.add(name);
+    return true;
+  };
+  body.innerHTML = 'Ticket content';
+  element('p-comment').value = 'Unsaved comment';
+  const button = element('p-toggle-sidebar');
+  button.listeners.click();
+  assert.equal(classes.has('sidebar-hidden'), true);
+  assert.equal(button.textContent, 'Show sidebar');
+  assert.equal(button.attributes['aria-expanded'], 'false');
+  button.listeners.click();
+  assert.equal(classes.has('sidebar-hidden'), false);
+  assert.equal(button.textContent, 'Hide sidebar');
+  assert.equal(button.attributes['aria-expanded'], 'true');
+  assert.equal(body.innerHTML, 'Ticket content');
+  assert.equal(element('p-comment').value, 'Unsaved comment');
+});
+
 test('all comment sections survive parsing when older ticket updates repeated the heading', () => {
   const { splitComments } = dashboard();
   const parsed = splitComments('Request\n\n## Comments\n\n### 2026-10-26\n\nOld feedback\n\n## Comments\n\n### 2026-10-27\n\nNew feedback');

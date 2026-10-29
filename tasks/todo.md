@@ -570,3 +570,11 @@ Validation: 18/18 dashboard/board tests and typecheck passed. Local commit and m
 - [x] Verify panel regressions and typecheck in the task container.
 
 Validation: 18/18 dashboard/board tests and typecheck passed in symphony-agent-activity-accordion. Local commit and merge authorized; no browser or full-suite check, or remote push.
+
+## Ticket sidebar visibility toggle
+
+- [x] Add an accessible Show/Hide sidebar button to the ticket header.
+- [x] Hide the properties sidebar and reclaim its grid column without rerendering drafts; retain visibility during panel refreshes.
+- [x] Run dashboard/board regressions and typecheck in the task container.
+
+Validation: 19/19 dashboard/board tests and typecheck passed in symphony-ticket-sidebar-toggle. Local commit and merge authorized; no browser or full-suite check, or remote push.

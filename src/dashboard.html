@@ -145,6 +145,8 @@
   .issue-top { display: flex; align-items: center; gap: 8px; height: 48px; flex-shrink: 0; padding: 0 12px 0 24px; border-bottom: 1px solid var(--line); color: var(--text-2); }
   .issue-top .key { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
   .issue-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+  .issue-grid.sidebar-hidden { grid-template-columns: minmax(0, 1fr); }
+  .issue-grid.sidebar-hidden .issue-side { display: none; }
   .issue-main { overflow-y: auto; padding: 40px 48px 48px; display: flex; flex-direction: column; gap: 28px; }
   .issue-main > * { width: 100%; max-width: 720px; }
   .issue-main h2 { margin: 0; font-size: 27px; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; overflow-wrap: anywhere; }
@@ -332,6 +334,7 @@
   <div class="issue-top">
     <span id="p-crumb"></span>
     <span class="spacer"></span>
+    <button class="btn" id="p-toggle-sidebar" type="button" aria-controls="p-sidebar" aria-expanded="true">Hide sidebar</button>
     <button class="icon-btn" id="p-close" type="button" aria-label="Close issue">
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
@@ -726,6 +729,11 @@ async function openPanel(identifier) {
   renderPanel(true);
 }
 function closePanel() { if ($('issue').open) $('issue').close(); }
+$('p-toggle-sidebar').addEventListener('click', () => {
+  const hidden = $('p-body').classList.toggle('sidebar-hidden');
+  $('p-toggle-sidebar').textContent = hidden ? 'Show sidebar' : 'Hide sidebar';
+  $('p-toggle-sidebar').setAttribute('aria-expanded', String(!hidden));
+});
 // Esc, ×, backdrop click and closePanel() all end here.
 $('issue').addEventListener('close', () => { selected = null; renderBoard(); });
 $('issue').addEventListener('click', (ev) => { if (ev.target === $('issue')) closePanel(); });
@@ -774,7 +782,7 @@ function renderPanel(keepDraft = false, force = false) {
         ${comments.map((c, i) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div>${decisionForm(c, i, comments)}</div>`).reverse().join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}
       </section>
     </div>
-    <aside class="issue-side" aria-label="Properties">
+    <aside class="issue-side" id="p-sidebar" aria-label="Properties">
       <div>
         <p class="side-title">Properties</p>
         <dl class="attrs">

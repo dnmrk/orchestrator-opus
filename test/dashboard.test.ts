@@ -92,6 +92,17 @@ test('ticket comments render newest first and preserve decision answer matching 
   assert.match(html, /data-comment="2"/);
   assert.doesNotMatch(html, /data-comment="0"/);
   assert.match(html, /Answers submitted in comments/);
+  assert.match(html, /<details id="p-agent-activity"><summary class="label">Agent activity<\/summary>/);
+  (document as any).querySelector = () => null;
+  element('p-agent-activity').open = true;
+  runInNewContext('renderPanel(true, true)', context);
+  assert.match(element('p-body').innerHTML, /<details id="p-agent-activity" open>/);
+  element('p-agent-activity').open = false;
+  runInNewContext('renderPanel(true, true)', context);
+  assert.match(element('p-body').innerHTML, /<details id="p-agent-activity">/);
+  element('p-agent-activity').open = true;
+  runInNewContext('renderPanel()', context);
+  assert.match(element('p-body').innerHTML, /<details id="p-agent-activity">/);
 });
 
 test('decision requests parse multiple questions, stop at the next section, and escape option markup', () => {

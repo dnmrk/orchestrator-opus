@@ -185,6 +185,7 @@
   .muted { color: var(--text-2); }
   .prose.none { color: var(--text-3); }
   .activity-feed { list-style: none; margin: 0; padding: 0; }
+  #p-agent-activity > summary { cursor: pointer; }
   .activity-feed li { display: grid; grid-template-columns: 84px 1fr; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
   .activity-feed time { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .comment { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; background: var(--card); }
@@ -742,6 +743,7 @@ function renderPanel(keepDraft = false, force = false) {
   const decisionDrafts = keepDraft ? captureDecisionDrafts() : new Map();
   const draft = keepDraft ? $('p-comment')?.value ?? '' : '';
   const hadFocus = document.activeElement?.id === 'p-comment';
+  const activityOpen = keepDraft && $('p-agent-activity')?.open;
   const { body, comments } = splitComments(t.description);
   const a = t.agent;
   const note = !a ? '' :
@@ -766,7 +768,7 @@ function renderPanel(keepDraft = false, force = false) {
         <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these on the next run in To Do or Rework."></textarea>
           <div class="row"><button class="btn" type="submit">Comment</button></div></form>
       </section>
-      ${events.length ? `<section><p class="label">Agent activity</p><ul class="activity-feed">${events.map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></section>` : ''}
+      ${events.length ? `<section><details id="p-agent-activity"${activityOpen ? ' open' : ''}><summary class="label">Agent activity</summary><ul class="activity-feed">${events.map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></details></section>` : ''}
       <section>
         <p class="label">Activity${comments.length ? `<span class="count">${comments.length}</span>` : ''}</p>
         ${comments.map((c, i) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div>${decisionForm(c, i, comments)}</div>`).reverse().join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}

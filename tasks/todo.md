@@ -562,3 +562,11 @@ Validation: 18/18 dashboard and board tests plus typecheck passed in symphony-co
 - [x] Run dashboard/board tests and typecheck in the isolated container.
 
 Validation: 18/18 dashboard/board tests and typecheck passed. Local commit and merge authorized; no full-suite or browser check, or remote push.
+
+## Collapsible agent activity
+
+- [x] Use native details/summary for keyboard-accessible activity toggling, initially collapsed.
+- [x] Preserve visibility during polling and forced panel refreshes; reset when opening a ticket.
+- [x] Verify panel regressions and typecheck in the task container.
+
+Validation: 18/18 dashboard/board tests and typecheck passed in symphony-agent-activity-accordion. Local commit and merge authorized; no browser or full-suite check, or remote push.

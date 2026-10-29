@@ -60,6 +60,22 @@ test('dashboard keyboard navigation selects and focuses tabs without interceptin
   assert.equal(prevented, 3);
 });
 
+test('workspace sidebar can be hidden and shown from the main header', () => {
+  const { element } = dashboard();
+  const sidebar = element('workspace-sidebar');
+  const button = element('toggle-workspace-sidebar');
+  button.listeners.click();
+  assert.equal(sidebar.hidden, true);
+  assert.equal(button.textContent, 'Show sidebar');
+  assert.equal(button.attributes['aria-expanded'], 'false');
+  element('tab-activity').listeners.click();
+  assert.equal(sidebar.hidden, true);
+  button.listeners.click();
+  assert.equal(sidebar.hidden, false);
+  assert.equal(button.textContent, 'Hide sidebar');
+  assert.equal(button.attributes['aria-expanded'], 'true');
+});
+
 test('ticket sidebar toggles visibility and accessible state without replacing content or drafts', () => {
   const { element } = dashboard();
   const classes = new Set<string>();

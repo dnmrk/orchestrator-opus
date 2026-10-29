@@ -578,3 +578,11 @@ Validation: 18/18 dashboard/board tests and typecheck passed in symphony-agent-a
 - [x] Run dashboard/board regressions and typecheck in the task container.
 
 Validation: 19/19 dashboard/board tests and typecheck passed in symphony-ticket-sidebar-toggle. Local commit and merge authorized; no browser or full-suite check, or remote push.
+
+## Workspace navigation visibility toggle
+
+- [x] Clarify that the requested sidebar is the left Issues/Activity navigation.
+- [x] Add a main-header toggle that remains visible when navigation is hidden, with accessible expanded state.
+- [x] Verify workspace toggle and dashboard/board regressions plus typecheck in an isolated container.
+
+Validation: 20/20 dashboard/board tests and typecheck passed in symphony-workspace-sidebar-toggle. Browser discovery returned no user tabs and local-file preview was blocked by browser URL policy; no visual check or full-suite run. Local commit and merge authorized; no remote push.

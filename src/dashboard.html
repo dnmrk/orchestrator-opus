@@ -42,6 +42,7 @@
   input::placeholder, textarea::placeholder { color: var(--text-3); opacity: 1; }
   button:disabled, .agent-model:disabled { opacity: .55; cursor: not-allowed; }
   .sidebar { flex: 0 0 216px; display: flex; flex-direction: column; gap: 28px; padding: 24px 16px 16px; background: var(--sidebar); border-right: 1px solid var(--line); }
+  .sidebar[hidden] { display: none; }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 16px; font-weight: 700; letter-spacing: -.025em; }
   .brand svg { color: var(--accent); }
   .workspace { padding: 0 8px; min-width: 0; }
@@ -292,7 +293,7 @@
 </style>
 </head>
 <body>
-<aside class="sidebar" aria-label="Workspace">
+<aside class="sidebar" id="workspace-sidebar" aria-label="Workspace">
   <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 15V9m4 10V5m4 16V3m4 16V5m4 10V9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Symphony</div>
   <div class="workspace"><span>Workspace</span><div class="project" id="project">Symphony</div></div>
   <nav class="navigation" role="tablist" aria-label="View" aria-orientation="vertical">
@@ -303,6 +304,7 @@
 </aside>
 <main class="app">
 <header class="head">
+  <button class="btn" id="toggle-workspace-sidebar" type="button" aria-controls="workspace-sidebar" aria-expanded="true">Hide sidebar</button>
   <div class="heading"><h1 class="page-title" id="view-title">Issues</h1><p class="page-description" id="view-description">A clear path from the next task to done.</p></div>
   <span class="spacer"></span>
   <span class="agents" id="agents" role="status"><i aria-hidden="true"></i><span id="agents-text">Connecting</span></span>
@@ -379,6 +381,12 @@ const PRIORITY = { 1: 'Urgent', 2: 'High', 3: 'Medium', 4: 'Low' };
 const store = { get: (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 
 let board = null, state = null, selected = null, detail = null, dragging = false, filter = '';
+$('toggle-workspace-sidebar').addEventListener('click', () => {
+  const sidebar = $('workspace-sidebar');
+  sidebar.hidden = !sidebar.hidden;
+  $('toggle-workspace-sidebar').textContent = sidebar.hidden ? 'Show sidebar' : 'Hide sidebar';
+  $('toggle-workspace-sidebar').setAttribute('aria-expanded', String(!sidebar.hidden));
+});
 let shown = new Set(store.get('symphony-shown', []));    // hidden columns the user chose to show
 let hidden = new Set(store.get('symphony-hidden', []));  // visible columns the user chose to hide
 let hiddenOpen = store.get('symphony-hidden-open', true);

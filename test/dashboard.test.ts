@@ -82,6 +82,7 @@ test('ticket comments render newest first and preserve decision answer matching 
     renderPanel();
   `, context);
   const html = element('p-body').innerHTML;
+  assert.ok(html.indexOf('id="p-comment-form"') < html.indexOf('class="comment"'));
   assert.ok(html.indexOf('Newest question?') < html.indexOf('Answer: Small'));
   assert.ok(html.indexOf('Answer: Small') < html.indexOf('Older question?'));
   assert.match(html, /data-comment="2"/);

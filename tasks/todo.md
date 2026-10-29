@@ -546,3 +546,11 @@ Validation: 101/101 tests and typecheck passed in symphony-latest-comments. Loca
 - [x] Verify long-message regressions, full suite and typecheck in the isolated container.
 
 Validation: reproduced the 500-character cutoff with a failing regression, then passed 102/102 tests and typecheck in symphony-full-activity-text. Local commit and merge to main authorized; no browser check, remote push or live daemon restart. Previously truncated in-memory activity cannot be reconstructed; full messages increase retained activity size, with existing event-count limits unchanged.
+
+## Comment box above ticket comments
+
+- [x] Move the existing composer above the comment list, preserving form IDs and handlers.
+- [x] Extend the panel regression to check that the composer precedes comments.
+- [x] Run dashboard tests and typecheck in an isolated container.
+
+Validation: 18/18 dashboard and board tests plus typecheck passed in symphony-comment-box-top. Local commit and merge to main authorized; no full-suite or visual browser check, or remote push.

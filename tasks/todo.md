@@ -530,3 +530,11 @@ Scope: shared dashboard comment/decision parsers, existing handoff guidance, doc
 Focused validation: 17/17 dashboard/board tests and typecheck passed in symphony-decision-formats. The actual DEV-8 file was inspected read-only; its existing comment is unchanged. Full-suite and live rendering verification follow before completion.
 
 Final validation: 100/100 full-suite tests and typecheck passed after rebasing. After the local merge, the actual running openIntake dashboard was reloaded read-only and DEV-8 displayed all three decision fields and Submit answers. No ticket text, status, answers or daemon process was changed. The installed Symphony package is a symlink to this checkout and the HTML is served per request, so a browser reload applies this UI fix. Options render only when explicit; open-ended topics use a type-only placeholder. The running daemon picks up new agent-prompt guidance at its next restart. No remote push.
+
+## Latest ticket comments first
+
+- [x] Reverse rendered ticket comments while preserving chronological storage and decision form indices.
+- [x] Add a regression for display order, answered decisions and unanswered form indices.
+- [x] Run dashboard tests, full suite and typecheck in the isolated container.
+
+Validation: 101/101 tests and typecheck passed in symphony-latest-comments. Local merge to main authorized; no visual browser check or remote push.

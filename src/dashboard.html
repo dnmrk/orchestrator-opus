@@ -764,7 +764,7 @@ function renderPanel(keepDraft = false, force = false) {
       ${events.length ? `<section><p class="label">Agent activity</p><ul class="activity-feed">${events.map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></section>` : ''}
       <section>
         <p class="label">Activity${comments.length ? `<span class="count">${comments.length}</span>` : ''}</p>
-        ${comments.map((c, i) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div>${decisionForm(c, i, comments)}</div>`).join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}
+        ${comments.map((c, i) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div>${decisionForm(c, i, comments)}</div>`).reverse().join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}
         <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these on the next run in To Do or Rework."></textarea>
           <div class="row"><button class="btn" type="submit">Comment</button></div></form>
       </section>

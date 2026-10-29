@@ -70,6 +70,25 @@ test('all comment sections survive parsing when older ticket updates repeated th
 });
 
 
+test('ticket comments render newest first and preserve decision answer matching and form indices', () => {
+  const { context, document, element } = dashboard();
+  (document as any).querySelectorAll = () => [];
+  runInNewContext(`
+    selected = 'DEV-1';
+    board = { title: 'Board', columns: ['Todo'], hidden_columns: [], terminal_states: [], active_states: ['Todo'], tickets: [{
+      identifier: 'DEV-1', title: 'Ticket', state: 'Todo', labels: [], blocked_by: [],
+      description: 'Request\\n\\n## Comments\\n\\n### 2026-10-27\\n\\n## Decisions\\nOlder question?\\n- Small\\n- Large\\n\\n### 2026-10-28\\n\\n## Decision answers\\n\\nDecision request: 2026-10-27\\n\\nAnswer: Small\\n\\n### 2026-10-29\\n\\n## Decisions\\nNewest question?\\n- Today\\n- Tomorrow'
+    }] };
+    renderPanel();
+  `, context);
+  const html = element('p-body').innerHTML;
+  assert.ok(html.indexOf('Newest question?') < html.indexOf('Answer: Small'));
+  assert.ok(html.indexOf('Answer: Small') < html.indexOf('Older question?'));
+  assert.match(html, /data-comment="2"/);
+  assert.doesNotMatch(html, /data-comment="0"/);
+  assert.match(html, /Answers submitted in comments/);
+});
+
 test('decision requests parse multiple questions, stop at the next section, and escape option markup', () => {
   const { context } = dashboard();
   const text = '## Decisions\nWhich approach?\n- Small\n- <script>bad()</script>\nWhen?\n1. Today\n2. Tomorrow\n## Notes\nNot a question';

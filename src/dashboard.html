@@ -762,11 +762,13 @@ function renderPanel(keepDraft = false, force = false) {
       <h2 id="p-title">${esc(t.title)}</h2>
       ${note ? `<div class="note ${a.kind}">${esc(note)}</div>` : ''}
       <section><p class="label">Description</p><div class="prose${body ? '' : ' none'}">${body ? inline(body) : 'No description.'}</div></section>
+      <section>
+        <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these on the next run in To Do or Rework."></textarea>
+          <div class="row"><button class="btn" type="submit">Comment</button></div></form>
+      </section>
       ${events.length ? `<section><p class="label">Agent activity</p><ul class="activity-feed">${events.map((e) => `<li><time>${new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time><span>${inline(e.message)}</span></li>`).join('')}</ul></section>` : ''}
       <section>
         <p class="label">Activity${comments.length ? `<span class="count">${comments.length}</span>` : ''}</p>
-        <form class="composer" id="p-comment-form"><textarea id="p-comment" aria-label="Leave a comment" placeholder="Leave a comment… Agents read these on the next run in To Do or Rework."></textarea>
-          <div class="row"><button class="btn" type="submit">Comment</button></div></form>
         ${comments.map((c, i) => `<div class="comment"><time>${esc(when(c.at))}</time><div class="prose">${inline(c.text)}</div>${decisionForm(c, i, comments)}</div>`).reverse().join('') || '<p class="nothing" style="margin:0 0 10px">No comments yet. Agents post progress here.</p>'}
       </section>
     </div>

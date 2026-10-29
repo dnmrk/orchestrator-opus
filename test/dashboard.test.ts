@@ -75,6 +75,7 @@ test('ticket comments render newest first and preserve decision answer matching 
   (document as any).querySelectorAll = () => [];
   runInNewContext(`
     selected = 'DEV-1';
+    detail = { recent_events: [{ at: '2026-10-29T12:00:00Z', message: 'Working on the ticket' }] };
     board = { title: 'Board', columns: ['Todo'], hidden_columns: [], terminal_states: [], active_states: ['Todo'], tickets: [{
       identifier: 'DEV-1', title: 'Ticket', state: 'Todo', labels: [], blocked_by: [],
       description: 'Request\\n\\n## Comments\\n\\n### 2026-10-27\\n\\n## Decisions\\nOlder question?\\n- Small\\n- Large\\n\\n### 2026-10-28\\n\\n## Decision answers\\n\\nDecision request: 2026-10-27\\n\\nAnswer: Small\\n\\n### 2026-10-29\\n\\n## Decisions\\nNewest question?\\n- Today\\n- Tomorrow'
@@ -82,6 +83,9 @@ test('ticket comments render newest first and preserve decision answer matching 
     renderPanel();
   `, context);
   const html = element('p-body').innerHTML;
+  assert.ok(html.includes('Agent activity'));
+  assert.ok(html.indexOf('Description</p>') < html.indexOf('id="p-comment-form"'));
+  assert.ok(html.indexOf('id="p-comment-form"') < html.indexOf('Agent activity'));
   assert.ok(html.indexOf('id="p-comment-form"') < html.indexOf('class="comment"'));
   assert.ok(html.indexOf('Newest question?') < html.indexOf('Answer: Small'));
   assert.ok(html.indexOf('Answer: Small') < html.indexOf('Older question?'));

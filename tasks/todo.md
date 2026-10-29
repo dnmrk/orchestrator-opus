@@ -554,3 +554,11 @@ Validation: reproduced the 500-character cutoff with a failing regression, then 
 - [x] Run dashboard tests and typecheck in an isolated container.
 
 Validation: 18/18 dashboard and board tests plus typecheck passed in symphony-comment-box-top. Local commit and merge to main authorized; no full-suite or visual browser check, or remote push.
+
+## Comment box before agent activity
+
+- [x] Move the existing composer below Description and above Agent activity.
+- [x] Extend panel coverage to include agent events and check composer placement.
+- [x] Run dashboard/board tests and typecheck in the isolated container.
+
+Validation: 18/18 dashboard/board tests and typecheck passed. Local commit and merge authorized; no full-suite or browser check, or remote push.
